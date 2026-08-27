@@ -173,3 +173,87 @@ def kill_pid(pid: int) -> None:
 
 
 Killer = Callable[[int], None]
+
+_UIA_WINDOWS_PS = r"""
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$src = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class WtWins {
+  public delegate bool Cb(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(Cb lp, IntPtr l);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+'@
+Add-Type -TypeDefinition $src
+$wtPid = [uint32]$env:WT_PROBE_PID
+$fg = [int64][WtWins]::GetForegroundWindow()
+$wins = [System.Collections.Generic.List[object]]::new()
+$cb = [WtWins+Cb]{
+  param($h, $l)
+  $p = 0
+  [void][WtWins]::GetWindowThreadProcessId($h, [ref]$p)
+  if ($p -ne $wtPid -or -not [WtWins]::IsWindowVisible($h)) { return $true }
+  $c = New-Object System.Text.StringBuilder 256
+  [void][WtWins]::GetClassName($h, $c, 256)
+  if ($c.ToString() -ne 'CASCADIA_HOSTING_WINDOW_CLASS') { return $true }
+  $t = New-Object System.Text.StringBuilder 512
+  [void][WtWins]::GetWindowText($h, $t, 512)
+  $el = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+  $tabs = 0; $panes = 0
+  if ($el) {
+    $all = $el.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($x in $all) {
+      if ($x.Current.ControlType.ProgrammaticName -eq 'ControlType.TabItem') { $tabs++ }
+      if ($x.Current.ClassName -eq 'TermControl') { $panes++ }
+    }
+  }
+  $hwnd = [int64]$h
+  $wins.Add([pscustomobject]@{
+    hwnd = $hwnd
+    title = $t.ToString()
+    tabs = $tabs
+    panes = $panes
+    current = ($hwnd -eq $fg)
+  })
+  return $true
+}
+[void][WtWins]::EnumWindows($cb, [IntPtr]::Zero)
+$wins | ConvertTo-Json -Compress
+"""
+
+
+def list_host_windows(term_pid: int) -> list[dict]:
+    """Visible Cascadia windows of this WindowsTerminal.exe (one process, many windows)."""
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", _UIA_WINDOWS_PS],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        env={**os.environ, "WT_PROBE_PID": str(term_pid)},
+    )
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return []
+    data = json.loads(proc.stdout)
+    if isinstance(data, dict):
+        data = [data]
+    out = []
+    for row in data:
+        out.append(
+            {
+                "hwnd": int(row.get("hwnd") or 0),
+                "title": str(row.get("title") or ""),
+                "tabs": int(row.get("tabs") or 0),
+                "panes": int(row.get("panes") or 0),
+                "current": bool(row.get("current")),
+            }
+        )
+    return out

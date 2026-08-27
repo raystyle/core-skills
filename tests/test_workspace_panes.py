@@ -79,30 +79,23 @@ def test_split_herdr_down_parses_pane() -> None:
     assert data["pane"] == "w1:p2"
 
 
-def test_list_wt_current_window_only() -> None:
+def test_list_wt_windows_not_process_tree() -> None:
     procs = [
-        Proc(1, 0, "explorer.exe"),
         Proc(10, 1, "WindowsTerminal.exe"),
-        Proc(11, 1, "WindowsTerminal.exe"),
-        Proc(20, 10, "OpenConsole.exe", created="1"),
         Proc(21, 10, "pwsh.exe", created="1"),
         Proc(22, 21, "grok.exe"),
-        Proc(30, 10, "OpenConsole.exe", created="2"),
         Proc(31, 10, "pwsh.exe", created="2"),
-        Proc(32, 31, "claude.exe"),
-        Proc(40, 11, "OpenConsole.exe", created="1"),
-        Proc(41, 11, "pwsh.exe", created="1"),
-        Proc(42, 41, "other.exe"),
         Proc(99, 21, "python.exe"),
     ]
-    data = list_panes(info=WT, procs=procs, self_pid=99)
-    assert data["window_pid"] == 10
-    assert data["scope"] == "current-window"
-    assert [p["id"] for p in data["panes"]] == ["0", "1"]
-    assert data["panes"][0]["current"] is True
-    assert set(data["panes"][0]["running"]) == {"grok.exe", "python.exe"}
-    assert data["panes"][1]["running"] == ["claude.exe"]
-    assert "other.exe" not in str(data["panes"])
+    wins = [
+        {"hwnd": 1, "title": "independent grok", "tabs": 1, "panes": 1, "current": False},
+        {"hwnd": 2, "title": "core-skills", "tabs": 1, "panes": 2, "current": True},
+    ]
+    data = list_panes(info=WT, procs=procs, self_pid=99, host_windows=wins)
+    assert data["process_pid"] == 10
+    assert data["current_window_panes"] == 2
+    assert len(data["windows"]) == 2
+    assert sum(w["panes"] for w in data["windows"]) == 3
 
 
 def test_list_herdr() -> None:
@@ -144,34 +137,9 @@ def test_focus_rejects_herdr_pane_id() -> None:
         focus_pane("w1:p2", info=HERDR, runner=lambda a: RunResult(list(a), 0, "", ""))
 
 
-def test_close_wt_refuses_current() -> None:
-    procs = [
-        Proc(10, 1, "WindowsTerminal.exe"),
-        Proc(20, 10, "OpenConsole.exe", created="1"),
-        Proc(21, 10, "pwsh.exe", created="1"),
-        Proc(99, 21, "python.exe"),
-    ]
-    with pytest.raises(MuxError, match="不能关当前窗格"):
-        close_pane("current", info=WT, procs=procs, self_pid=99, killer=lambda p: None)
-    with pytest.raises(MuxError, match="不能关当前窗格"):
-        close_pane("0", info=WT, procs=procs, self_pid=99, killer=lambda p: None)
-
-
-def test_close_wt_others_kills_other_shells_only() -> None:
-    killed: list[int] = []
-    procs = [
-        Proc(10, 1, "WindowsTerminal.exe"),
-        Proc(20, 10, "OpenConsole.exe", created="1"),
-        Proc(21, 10, "pwsh.exe", created="1"),
-        Proc(30, 10, "OpenConsole.exe", created="2"),
-        Proc(31, 10, "pwsh.exe", created="2"),
-        Proc(99, 21, "python.exe"),
-    ]
-    data = close_pane(
-        "others", info=WT, procs=procs, self_pid=99, killer=killed.append
-    )
-    assert data["closed"] == ["1"]
-    assert killed == [31]
+def test_close_wt_refuses_process_tree() -> None:
+    with pytest.raises(MuxError, match="误伤独立窗口"):
+        close_pane("others", info=WT, killer=lambda p: None)
 
 
 def test_close_herdr_id() -> None:

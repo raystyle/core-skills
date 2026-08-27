@@ -16,6 +16,7 @@ from .wt_window import (
     Killer,
     Proc,
     kill_pid,
+    list_host_windows,
     snapshot_processes,
     terminal_pid,
     window_panes,
@@ -109,10 +110,13 @@ def list_panes(
     runner: Runner | None = None,
     procs: list[Proc] | None = None,
     self_pid: int | None = None,
+    host_windows: list[dict] | None = None,
 ) -> dict:
     info = require_mux(info)
     if info.mux == "wt":
-        return _list_wt(info, procs=procs, self_pid=self_pid)
+        return _list_wt(
+            info, procs=procs, self_pid=self_pid, host_windows=host_windows
+        )
     result = _check(_exec(runner, [_bin(info), "pane", "list"]), what="herdr pane list")
     panes = _parse_herdr_list(result.stdout)
     return {"mux": "herdr", "session": info.session, "panes": panes}
@@ -178,19 +182,27 @@ def _list_wt(
     *,
     procs: list[Proc] | None,
     self_pid: int | None,
+    host_windows: list[dict] | None,
 ) -> dict:
     rows = procs if procs is not None else snapshot_processes()
     me = os.getpid() if self_pid is None else self_pid
     tid = terminal_pid(rows, me)
-    panes = window_panes(rows, term_pid=tid, self_pid=me) if tid else []
+    wins = host_windows if host_windows is not None else (
+        list_host_windows(tid) if tid else []
+    )
+    current = next((w for w in wins if w.get("current")), None)
     return {
         "mux": "wt",
         "session": info.session,
-        "window_pid": tid,
-        "scope": "current-window",
-        "panes": panes,
-        "focus": "left/right/up/down|previous|first|<n>",
-        "close": "<n>|others（结束本窗口里其它格的壳进程；不能关当前格）",
+        "note": "WT_SESSION 是每格一条；多窗口共用一个 WindowsTerminal.exe。见 docs/research/wt-windows.md",
+        "process_pid": tid,
+        "windows": wins,
+        "current_window_panes": (current or {}).get("panes"),
+        "process_tree_all_windows": (
+            window_panes(rows, term_pid=tid, self_pid=me) if tid else []
+        ),
+        "focus": "left/right/up/down|previous|first|<n>（相对当前窗口）",
+        "close": "wt 无法把壳进程钉到某一 HWND，不能按进程树关其它窗口的格",
     }
 
 
@@ -202,36 +214,10 @@ def _close_wt(
     self_pid: int | None,
     killer: Killer | None,
 ) -> dict:
-    rows = procs if procs is not None else snapshot_processes()
-    me = os.getpid() if self_pid is None else self_pid
-    tid = terminal_pid(rows, me)
-    if tid is None:
-        raise MuxError("找不到当前 Windows Terminal 窗口")
-    panes = window_panes(rows, term_pid=tid, self_pid=me)
-    if target.lower() == "current":
-        raise MuxError("不能关当前窗格")
-    if target.lower() == "others":
-        chosen = [p for p in panes if not p["current"]]
-    else:
-        chosen = [p for p in panes if p["id"] == target]
-        if not chosen:
-            raise MuxError(f"本窗口没有窗格 {target}")
-        if chosen[0]["current"]:
-            raise MuxError("不能关当前窗格")
-    kill = killer or kill_pid
-    closed: list[str] = []
-    for p in chosen:
-        pid = p.get("shell_pid")
-        if not pid:
-            continue
-        kill(int(pid))
-        closed.append(p["id"])
-    return {
-        "mux": "wt",
-        "scope": "current-window",
-        "closed": closed,
-        "session": info.session,
-    }
+    raise MuxError(
+        "wt 1.24 多窗口共用一个进程，进程树关窗格会误伤独立窗口；"
+        "请用 UI 关（见 docs/research/wt-windows.md）"
+    )
 
 
 def _split_wt(

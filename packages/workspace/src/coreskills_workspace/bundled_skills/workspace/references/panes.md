@@ -19,9 +19,11 @@ wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `p
 
 | 命令 | wt | herdr |
 |------|----|-------|
-| `pane list` | 只扫**当前 WT 窗口**进程树（OpenConsole+壳） | `herdr pane list` |
-| `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR` | `herdr pane focus --direction DIR --current` |
+| `pane list` | 按 HWND（`CASCADIA_HOSTING_WINDOW_CLASS`）列窗口，UIA 数 `TermControl` | `herdr pane list` |
+| `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR`（当前窗口） | `herdr pane focus --direction DIR --current` |
 | `pane focus <n>` | `wt -w 0 focus-pane -t n` | 不支持（不是方向） |
-| `pane close <n>\|others` | 结束本窗口里该格的壳进程（不能关当前格；不调 wt close-pane） | `herdr pane close <id>` |
+| `pane close` | 不能按进程树关（多窗口共用一个进程） | `herdr pane close <id>` |
+
+细节：`docs/research/wt-windows.md`。`WT_SESSION` 是每格一条 GUID。
 
 不要对 wt 调用未列出的子命令，`--help` / 未知命令会弹 Help 对话框，stdout 是空的。
