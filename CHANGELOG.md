@@ -5,6 +5,7 @@
 ### 新增
 
 - `project init`：把自带 `project` skill 装到 `.agents/skills/project/`，并接上 `.claude/skills` 别名
+- 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）
 
 ### 变更
 

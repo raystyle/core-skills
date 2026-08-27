@@ -148,8 +148,24 @@ def test_init_installs_agents_and_claude_alias(tmp_path: Path) -> None:
     assert skill.is_file()
     text = skill.read_text(encoding="utf-8")
     assert "name: project" in text
+    refs = tmp_path / ".agents" / "skills" / "project" / "references"
+    assert (refs / "layout.md").is_file()
+    assert (refs / "six-states.md").is_file()
     from coreskills_project.skills_layout import claude_alias_ok
 
     assert claude_alias_ok(tmp_path)
     problems = check_docs(tmp_path)
     assert not any(p.check == "skill" and p.level == "error" for p in problems)
+
+
+def test_init_fills_missing_references_without_force(tmp_path: Path) -> None:
+    dest = tmp_path / ".agents" / "skills" / "project"
+    dest.mkdir(parents=True)
+    (dest / "SKILL.md").write_text(
+        "---\nname: project\ndescription: placeholder for init merge test.\n---\n\n# old\n",
+        encoding="utf-8",
+    )
+    assert main(["init", str(tmp_path)]) == 0
+    assert (dest / "SKILL.md").read_text(encoding="utf-8").startswith("---\nname: project")
+    assert "# old" in (dest / "SKILL.md").read_text(encoding="utf-8")
+    assert (dest / "references" / "layout.md").is_file()
