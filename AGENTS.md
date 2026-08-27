@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-用 uv workspace 维护若干 Python CLI（`project` / `workspace` / `harness`）和对应 skill。本阶段已落地 `project` 与 `workspace`。
+用 uv workspace 维护若干 Python CLI（`project` / `workspace` / `harness`）和对应 skill。本阶段已落地 `project` 与 `workspace`（wt 侧拆格/`--agent`/读发键；herdr 关自己与 Linux 冒烟后测）。
 
 ## 硬规则
 
@@ -36,4 +36,5 @@ uv run pytest
 
 ## 待办
 
-见 `ROADMAP.md`。
+- herdr：`pane close current` 不得关调用者；Linux 上 `workspace detect` 冒烟（`ctypes.windll` 已按 win32 分支加载，未实机）。
+- 见 `ROADMAP.md`。

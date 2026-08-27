@@ -8,7 +8,7 @@ Author: ray. Status: accepted.
 
 ## Proposed outcome
 
-`workspace` CLI + 项目级 skill（两份拷贝）：检测当前复用器、统一 split/list/focus/close、`.workspace/inbox` 消费式信箱。
+`workspace` CLI + 项目级 skill（两份拷贝）：检测当前复用器、统一 split/list/focus/close/read/text/keys、`.workspace/inbox` 消费式信箱。可 `--agent` 在同一窗口起 claude/codex/kimi。
 
 ## Affected users and systems
 
@@ -17,7 +17,7 @@ Author: ray. Status: accepted.
 ## Constraints
 
 - Windows 检测 wt，Linux 检测 herdr。
-- 窗格做到分割 + 列表/聚焦/关闭，不包含独立的 send/run 子命令。
+- 窗格：分割 + 列表/聚焦/关闭 + 读屏 + 打字/发键（`pane text` / `pane keys`）。不是独立的 `run` 子命令。
 - 信箱是目录文件，不是 OS named pipe / junction。
 - `init` 与 `project` 一样装两份 skill。
 
