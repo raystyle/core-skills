@@ -7,6 +7,7 @@ import os
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 SHELL_NAMES = {
     "pwsh.exe",
@@ -35,7 +36,8 @@ def snapshot_processes() -> list[Proc]:
             "-Command",
             (
                 "Get-CimInstance Win32_Process | "
-                "Select-Object ProcessId,ParentProcessId,Name,CommandLine,CreationDate | "
+                "Select-Object ProcessId,ParentProcessId,Name,CommandLine,"
+                "@{n='CreationDate';e={ if ($_.CreationDate) { $_.CreationDate.ToString('yyyyMMddHHmmss') } else { '' } }} | "
                 "ConvertTo-Json -Compress"
             ),
         ],
@@ -122,10 +124,63 @@ def window_panes(
                 "shell_pid": shell.pid if shell else None,
                 "shell": shell.name if shell else None,
                 "openconsole_pid": con.pid if con else None,
+                "created": shell.created if shell else (con.created if con else ""),
                 "running": running,
             }
         )
     return panes
+
+
+def pick_current_window(
+    host_windows: Sequence[dict], *, cwd: str | None = None
+) -> dict | None:
+    """Window this agent is in: title∋cwd name, else unique split window, else foreground."""
+    wins = list(host_windows)
+    if cwd:
+        name = Path(cwd).name.lower()
+        if name:
+            hits = [w for w in wins if name in (w.get("title") or "").lower()]
+            if len(hits) == 1:
+                return hits[0]
+    multi = [w for w in wins if int(w.get("panes") or 0) > 1]
+    if len(multi) == 1:
+        return multi[0]
+    fg = [w for w in wins if w.get("current")]
+    if fg:
+        return fg[0]
+    return None
+
+
+def siblings_in_current_window(
+    panes: Sequence[dict], host_windows: Sequence[dict]
+) -> list[dict]:
+    """Other shells in the current Cascadia window.
+
+    Pane count comes from UIA. Sibling shells are the nearest-in-creation-time
+    neighbors of the current shell (same WT process, not the current pane).
+    """
+    current_win = pick_current_window(host_windows, cwd=str(Path.cwd()))
+    if not current_win:
+        raise RuntimeError("无法确定当前 Cascadia 窗口")
+    n_other = int(current_win.get("panes") or 0) - 1
+    if n_other <= 0:
+        raise RuntimeError("当前窗口没有其它窗格")
+    mine = next((p for p in panes if p.get("current")), None)
+    if not mine or not mine.get("shell_pid"):
+        raise RuntimeError("找不到当前格的壳进程")
+    others = [p for p in panes if not p.get("current") and p.get("shell_pid")]
+    others.sort(key=lambda p: _created_dist(mine.get("created") or "", p.get("created") or ""))
+    picked = others[:n_other]
+    if len(picked) < n_other:
+        raise RuntimeError("当前窗口其它格数量对不上进程树")
+    return picked
+
+
+def _created_dist(a: str, b: str) -> int:
+    try:
+        return abs(int(a[:14]) - int(b[:14]))
+    except ValueError:
+        return 10**18
 
 
 def _shell_containing(
@@ -163,7 +218,7 @@ def _descendants(root: int, children: dict[int, list[Proc]]) -> list[Proc]:
 
 def kill_pid(pid: int) -> None:
     subprocess.run(
-        ["taskkill", "/PID", str(pid)],
+        ["taskkill", "/PID", str(pid), "/T", "/F"],
         capture_output=True,
         text=True,
         encoding="utf-8",

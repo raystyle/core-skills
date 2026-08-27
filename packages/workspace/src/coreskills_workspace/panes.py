@@ -17,6 +17,8 @@ from .wt_window import (
     Proc,
     kill_pid,
     list_host_windows,
+    pick_current_window,
+    siblings_in_current_window,
     snapshot_processes,
     terminal_pid,
     window_panes,
@@ -162,12 +164,18 @@ def close_pane(
     procs: list[Proc] | None = None,
     self_pid: int | None = None,
     killer: Killer | None = None,
+    host_windows: list[dict] | None = None,
 ) -> dict:
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
         return _close_wt(
-            t, info=info, procs=procs, self_pid=self_pid, killer=killer
+            t,
+            info=info,
+            procs=procs,
+            self_pid=self_pid,
+            killer=killer,
+            host_windows=host_windows,
         )
     if t.lower() == "current":
         t = info.pane or ""
@@ -190,7 +198,7 @@ def _list_wt(
     wins = host_windows if host_windows is not None else (
         list_host_windows(tid) if tid else []
     )
-    current = next((w for w in wins if w.get("current")), None)
+    current = pick_current_window(wins, cwd=str(Path.cwd()))
     return {
         "mux": "wt",
         "session": info.session,
@@ -202,7 +210,7 @@ def _list_wt(
             window_panes(rows, term_pid=tid, self_pid=me) if tid else []
         ),
         "focus": "left/right/up/down|previous|first|<n>（相对当前窗口）",
-        "close": "wt 无法把壳进程钉到某一 HWND，不能按进程树关其它窗口的格",
+        "close": "others：关掉当前窗口里其它格（UIA 格数 + 创建时间最近的壳）",
     }
 
 
@@ -213,11 +221,37 @@ def _close_wt(
     procs: list[Proc] | None,
     self_pid: int | None,
     killer: Killer | None,
+    host_windows: list[dict] | None = None,
 ) -> dict:
-    raise MuxError(
-        "wt 1.24 多窗口共用一个进程，进程树关窗格会误伤独立窗口；"
-        "请用 UI 关（见 docs/research/wt-windows.md）"
-    )
+    if target.lower() not in {"others", "other"}:
+        raise MuxError("wt 请用 pane close others（只关当前窗口其它格）")
+    rows = procs if procs is not None else snapshot_processes()
+    me = os.getpid() if self_pid is None else self_pid
+    tid = terminal_pid(rows, me)
+    if tid is None:
+        raise MuxError("找不到当前 Windows Terminal 进程")
+    wins = host_windows if host_windows is not None else list_host_windows(tid)
+    panes = window_panes(rows, term_pid=tid, self_pid=me)
+    try:
+        chosen = siblings_in_current_window(panes, wins)
+    except RuntimeError as exc:
+        raise MuxError(str(exc)) from exc
+    kill = killer or kill_pid
+    closed: list[dict] = []
+    for p in chosen:
+        kill(int(p["shell_pid"]))
+        closed.append(
+            {
+                "shell_pid": p["shell_pid"],
+                "running": p.get("running") or [],
+            }
+        )
+    return {
+        "mux": "wt",
+        "scope": "current-window",
+        "closed": closed,
+        "session": info.session,
+    }
 
 
 def _split_wt(

@@ -20,4 +20,11 @@
 
 壳进程没有自己的 HWND（ConPTY）。可靠近似：前台窗口若是 Cascadia 且 pid 相同，即当前工作台（agent 在前台格时成立）。UIA 里 `TermControl.Name` 只有配置名（如 PowerShell），对不上 grok/claude 进程。
 
-因此：**可以数清某一窗口有几格，还不能把某个 `pwsh` pid 钉到某一格。** 不能按进程树 `close others`，会误杀独立窗口里的 grok。
+因此：**可以数清某一窗口有几格，还不能把某个 `pwsh` pid 钉到某一格。**
+
+`pane close others` 用两条启发式，避免误杀独立窗口：
+
+1. 当前工作台：窗口标题含当前目录名（如 `core-skills`）；不要用 GetForegroundWindow（agent 跑命令时前台常不是 Cascadia）。
+2. 该窗口其它格的壳：与当前壳 **创建时间最近** 的 `current_window_panes - 1` 个壳。独立窗口里更早的 grok 会被排掉。
+
+结束壳进程后，WT 若 `closeOnExit` 不是 always，UI 上可能还留着「进程已退出」那一格。

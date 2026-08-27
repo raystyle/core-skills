@@ -22,7 +22,7 @@ wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `p
 | `pane list` | 按 HWND（`CASCADIA_HOSTING_WINDOW_CLASS`）列窗口，UIA 数 `TermControl` | `herdr pane list` |
 | `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR`（当前窗口） | `herdr pane focus --direction DIR --current` |
 | `pane focus <n>` | `wt -w 0 focus-pane -t n` | 不支持（不是方向） |
-| `pane close` | 不能按进程树关（多窗口共用一个进程） | `herdr pane close <id>` |
+| `pane close others` | 当前窗口其它格：UIA 格数 + 与当前壳创建时间最近的壳 | `herdr pane close <id>` |
 
 细节：`docs/research/wt-windows.md`。`WT_SESSION` 是每格一条 GUID。
 

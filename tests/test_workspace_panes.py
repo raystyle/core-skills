@@ -9,7 +9,7 @@ import pytest
 from coreskills_workspace.detect import DetectResult
 from coreskills_workspace.panes import MuxError, close_pane, focus_pane, list_panes, split_pane
 from coreskills_workspace.run import RunResult
-from coreskills_workspace.wt_window import Proc
+from coreskills_workspace.wt_window import Proc, pick_current_window
 
 
 WT = DetectResult(os="windows", expected="wt", mux="wt", inside=True, bin="wt")
@@ -94,6 +94,17 @@ def test_list_wt_windows_not_process_tree() -> None:
     data = list_panes(info=WT, procs=procs, self_pid=99, host_windows=wins)
     assert data["process_pid"] == 10
     assert data["current_window_panes"] == 2
+    # even if UIA current flags are false, unique multi-pane window is used
+    data2 = list_panes(
+        info=WT,
+        procs=procs,
+        self_pid=99,
+        host_windows=[
+            {"hwnd": 1, "title": "independent grok", "tabs": 1, "panes": 1, "current": False},
+            {"hwnd": 2, "title": "core-skills", "tabs": 1, "panes": 2, "current": False},
+        ],
+    )
+    assert data2["current_window_panes"] == 2
     assert len(data["windows"]) == 2
     assert sum(w["panes"] for w in data["windows"]) == 3
 
@@ -137,9 +148,57 @@ def test_focus_rejects_herdr_pane_id() -> None:
         focus_pane("w1:p2", info=HERDR, runner=lambda a: RunResult(list(a), 0, "", ""))
 
 
-def test_close_wt_refuses_process_tree() -> None:
-    with pytest.raises(MuxError, match="误伤独立窗口"):
-        close_pane("others", info=WT, killer=lambda p: None)
+def test_close_wt_others_nearest_in_time_not_other_window() -> None:
+    killed: list[int] = []
+    procs = [
+        Proc(10, 1, "WindowsTerminal.exe"),
+        Proc(20, 10, "OpenConsole.exe", created="20260827095203000"),
+        Proc(21, 10, "pwsh.exe", created="20260827095203000"),
+        Proc(22, 21, "grok.exe"),
+        Proc(30, 10, "OpenConsole.exe", created="20260827172456000"),
+        Proc(31, 10, "pwsh.exe", created="20260827172456000"),
+        Proc(32, 31, "claude.exe"),
+        Proc(40, 10, "OpenConsole.exe", created="20260827172542000"),
+        Proc(41, 10, "pwsh.exe", created="20260827172542000"),
+        Proc(99, 41, "python.exe"),
+    ]
+    wins = [
+        {"hwnd": 1, "title": "independent", "tabs": 1, "panes": 1, "current": False},
+        {"hwnd": 2, "title": "here", "tabs": 1, "panes": 2, "current": True},
+    ]
+    data = close_pane(
+        "others",
+        info=WT,
+        procs=procs,
+        self_pid=99,
+        killer=killed.append,
+        host_windows=wins,
+    )
+    assert killed == [31]
+    assert data["closed"][0]["running"] == ["claude.exe"]
+
+
+def test_pick_window_by_cwd_not_foreground() -> None:
+    wins = [
+        {"hwnd": 1, "title": "qihoo-01 sing-box - grok", "tabs": 1, "panes": 1, "current": True},
+        {"hwnd": 2, "title": "core-skills CLI - grok", "tabs": 1, "panes": 2, "current": False},
+    ]
+    w = pick_current_window(wins, cwd=r"D:\core-skills")
+    assert w is not None
+    assert w["hwnd"] == 2
+
+
+def test_close_wt_others_none() -> None:
+    procs = [
+        Proc(10, 1, "WindowsTerminal.exe"),
+        Proc(41, 10, "pwsh.exe", created="20260827172542000"),
+        Proc(99, 41, "python.exe"),
+    ]
+    wins = [{"hwnd": 2, "title": "here", "tabs": 1, "panes": 1, "current": True}]
+    with pytest.raises(MuxError, match="没有其它窗格"):
+        close_pane(
+            "others", info=WT, procs=procs, self_pid=99, host_windows=wins, killer=lambda p: None
+        )
 
 
 def test_close_herdr_id() -> None:
