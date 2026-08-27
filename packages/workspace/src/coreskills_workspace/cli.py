@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     pc = pane_sub.add_parser("count", help="当前窗口有几格")
     pc.add_argument("--json", action="store_true")
     pr = pane_sub.add_parser("read", help="读指定格的屏幕文本")
-    pr.add_argument("id", type=int)
+    pr.add_argument("id", help="序号或 pane_id / WT_SESSION 前缀")
     pr.add_argument("--json", action="store_true")
     pcl = pane_sub.add_parser("close", help="关掉指定格（不能关最后一格/自己）")
     pcl.add_argument("target")

@@ -12,12 +12,13 @@ description: >
 
 ## 同一窗口三原语
 
-编号是当前 Cascadia 窗口里 `TermControl` 的顺序，和 `wt focus-pane -t` 一致。
+同一窗口。格子有两套标记：序号 `0..n-1`（给 `wt focus-pane -t`），以及 `pane_id`（`WT_SESSION`，类似 Herdr 的 `HERDR_PANE_ID`）。`read`/`close` 两种都能用。
 
 ```
 uv run workspace pane count
-uv run workspace pane read <n>
-uv run workspace pane close <n>
+uv run workspace pane read 0
+uv run workspace pane read 64f0a21d
+uv run workspace pane close 1
 ```
 
 关格：先 `focus-pane -t n`，已退出的发 Ctrl+D，还活着的发 Ctrl+Shift+W。不能关最后一格，也不能关正在跑本命令的那一格。

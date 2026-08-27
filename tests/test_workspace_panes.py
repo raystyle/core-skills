@@ -51,8 +51,7 @@ def test_split_wt_vertical() -> None:
     assert argv[:5] == ["wt", "-w", "0", "split-pane", "-V"]
     assert "--startingDirectory" in argv
     assert "logs" in argv
-    assert "pwsh" in argv
-    assert "-EncodedCommand" not in argv
+    assert "-EncodedCommand" in argv
 
 
 def test_split_wt_semicolon_uses_encoded_command() -> None:
@@ -71,7 +70,9 @@ def test_split_wt_semicolon_uses_encoded_command() -> None:
     assert ";" not in "".join(argv)
     assert "-EncodedCommand" in argv
     blob = argv[argv.index("-EncodedCommand") + 1]
-    assert base64.b64decode(blob).decode("utf-16-le") == cmd
+    decoded = base64.b64decode(blob).decode("utf-16-le")
+    assert "WORKSPACE_PANE_ID=" in decoded
+    assert cmd in decoded
 
 
 def test_split_herdr_down_parses_pane() -> None:
@@ -133,6 +134,12 @@ def test_count_and_read_from_snapshot() -> None:
     assert "hello grok" in read["text"]
     with pytest.raises(MuxError, match="没有窗格 9"):
         read_pane_content(9, info=WT, snapshot=snap)
+    snap["panes"][0]["id"] = 0
+    snap["panes"][0]["pane_id"] = "64f0a21d-aaaa"
+    snap["panes"][1]["id"] = 1
+    snap["panes"][1]["pane_id"] = "975c447b-bbbb"
+    by_id = read_pane_content("64f0a21d", info=WT, snapshot=snap)
+    assert by_id["id"] == 0
 
 
 def test_list_herdr() -> None:

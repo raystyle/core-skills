@@ -6,6 +6,18 @@ import json
 import os
 import subprocess
 from collections.abc import Callable, Sequence
+from ctypes import (
+    POINTER,
+    Structure,
+    byref,
+    c_size_t,
+    c_ubyte,
+    c_ulong,
+    c_void_p,
+    sizeof,
+    windll,
+)
+from ctypes import wintypes as w
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +29,87 @@ SHELL_NAMES = {
     "wsl.exe",
 }
 SKIP_RUNNING = {"conhost.exe", "openconsole.exe"}
+PROCESS_QUERY_INFORMATION = 0x0400
+PROCESS_VM_READ = 0x0010
+OpenProcess = windll.kernel32.OpenProcess
+OpenProcess.restype = w.HANDLE
+ReadProcessMemory = windll.kernel32.ReadProcessMemory
+ReadProcessMemory.argtypes = [
+    w.HANDLE,
+    w.LPCVOID,
+    w.LPVOID,
+    c_size_t,
+    POINTER(c_size_t),
+]
+NtQueryInformationProcess = windll.ntdll.NtQueryInformationProcess
+CloseHandle = windll.kernel32.CloseHandle
+
+
+class _PBI(Structure):
+    _fields_ = [
+        ("ExitStatus", c_void_p),
+        ("PebBaseAddress", c_void_p),
+        ("AffinityMask", c_void_p),
+        ("BasePriority", c_void_p),
+        ("UniqueProcessId", c_void_p),
+        ("InheritedFromUniqueProcessId", c_void_p),
+    ]
+
+
+def process_env(pid: int, keys: Sequence[str] | None = None) -> dict[str, str]:
+    """Read selected env vars from another process (WT_SESSION ≈ HERDR_PANE_ID)."""
+    wanted = set(
+        keys
+        or (
+            "WT_SESSION",
+            "WT_PROFILE_ID",
+            "WORKSPACE_PANE_ID",
+            "WORKSPACE_ENV",
+            "HERDR_PANE_ID",
+            "HERDR_ENV",
+        )
+    )
+    handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+    if not handle:
+        return {}
+    try:
+        pbi = _PBI()
+        ret = c_ulong()
+        status = NtQueryInformationProcess(
+            handle, 0, byref(pbi), sizeof(pbi), byref(ret)
+        )
+        if status != 0 or not pbi.PebBaseAddress:
+            return {}
+        peb = _read_mem(handle, pbi.PebBaseAddress, 0x40)
+        if not peb:
+            return {}
+        params_addr = int.from_bytes(peb[0x20:0x28], "little")
+        params = _read_mem(handle, params_addr, 0x200)
+        if not params:
+            return {}
+        env_ptr = int.from_bytes(params[0x80:0x88], "little")
+        raw = _read_mem(handle, env_ptr, 64 * 1024)
+        if not raw:
+            return {}
+        text = raw.decode("utf-16le", "replace")
+        found: dict[str, str] = {}
+        for part in text.split("\x00"):
+            if "=" not in part:
+                continue
+            key, val = part.split("=", 1)
+            if key in wanted:
+                found[key] = val
+        return found
+    finally:
+        CloseHandle(handle)
+
+
+def _read_mem(handle, addr: int, n: int) -> bytes | None:
+    buf = (c_ubyte * n)()
+    got = c_size_t()
+    if not ReadProcessMemory(handle, c_void_p(addr), buf, n, byref(got)):
+        return None
+    return bytes(buf[: got.value])
 
 
 @dataclass(frozen=True)
@@ -112,11 +205,13 @@ def window_panes(
         shell = shells[i] if i < len(shells) else None
         con = cons[i] if i < len(cons) else None
         running = []
+        env: dict[str, str] = {}
         if shell is not None:
             for d in _descendants(shell.pid, children):
                 if d.name.lower() in SKIP_RUNNING:
                     continue
                 running.append(d.name)
+            env = process_env(shell.pid)
         panes.append(
             {
                 "id": str(i),
@@ -126,6 +221,8 @@ def window_panes(
                 "openconsole_pid": con.pid if con else None,
                 "created": shell.created if shell else (con.created if con else ""),
                 "running": running,
+                "pane_id": env.get("WORKSPACE_PANE_ID") or env.get("WT_SESSION"),
+                "wt_session": env.get("WT_SESSION"),
             }
         )
     return panes

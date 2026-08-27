@@ -15,7 +15,9 @@ wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `p
 
 ## 同一窗口：count / read / close
 
-当前工作台用窗口标题里的目录名认定（不要用前台窗口）。格子 = 该 HWND 下 UIA `TermControl`，编号 0..n-1。
+当前工作台用窗口标题里的目录名认定（不要用前台窗口）。格子 = 该 HWND 下 UIA `TermControl`。
+
+Herdr 往进程注入 `HERDR_PANE_ID`；WT 每格注入 `WT_SESSION`（本 CLI 当作 `pane_id`）。split 时再写入 `WORKSPACE_ENV` / `WORKSPACE_PANE_ID`。见 `docs/research/herdr-pane-identity.md`。
 
 | 命令 | 做什么 |
 |------|--------|

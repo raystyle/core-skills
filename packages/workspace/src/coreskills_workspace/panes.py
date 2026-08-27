@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import shutil
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from .wt_terms import close_term, inspect_panes, read_pane as uia_read_pane
 from .wt_window import (
     Killer,
     Proc,
+    _created_dist,
     kill_pid,
     list_host_windows,
     pick_current_window,
@@ -107,6 +109,54 @@ def split_pane(
     return _split_herdr(side, cwd=cwd_s, title=title, cmd=cmd, size=size, info=info, runner=runner)
 
 
+def resolve_pane(target: str, records: list[dict]) -> int:
+    t = str(target).strip()
+    if t.isdigit():
+        idx = int(t)
+        if 0 <= idx < len(records):
+            return idx
+        raise MuxError(f"本窗口没有窗格 {t}（共 {len(records)} 格）")
+    key = t.lower()
+    hits = [
+        r
+        for r in records
+        if str(r.get("pane_id") or "").lower().startswith(key)
+        or str(r.get("wt_session") or "").lower().startswith(key)
+    ]
+    if len(hits) == 1:
+        return int(hits[0]["id"])
+    raise MuxError(f"无法解析窗格 '{t}'")
+
+
+def _tag_records(uia: dict, tree: list[dict]) -> list[dict]:
+    terms = uia.get("panes") or []
+    mine = next((p for p in tree if p.get("current")), None)
+    local: list[dict] = []
+    if mine:
+        others = [p for p in tree if not p.get("current") and p.get("shell_pid")]
+        others.sort(
+            key=lambda p: _created_dist(mine.get("created") or "", p.get("created") or "")
+        )
+        local = [mine, *others[: max(0, len(terms) - 1)]]
+        local.sort(key=lambda p: p.get("created") or "")
+    records = []
+    for i, term in enumerate(terms):
+        shell = local[i] if i < len(local) else {}
+        records.append(
+            {
+                "id": i,
+                "pane_id": shell.get("pane_id") or shell.get("wt_session"),
+                "wt_session": shell.get("wt_session"),
+                "current": bool(shell.get("current")),
+                "running": shell.get("running") or [],
+                "exited": term.get("exited"),
+                "focus": term.get("focus"),
+                "preview": term.get("preview"),
+            }
+        )
+    return records
+
+
 def count_panes(*, info: DetectResult | None = None, snapshot: dict | None = None) -> dict:
     info = require_mux(info)
     if snapshot is not None:
@@ -127,40 +177,50 @@ def count_panes(*, info: DetectResult | None = None, snapshot: dict | None = Non
         raise MuxError(str(exc)) from exc
     if data.get("error"):
         raise MuxError(str(data["error"]))
+    rows = snapshot_processes()
+    me = os.getpid()
+    tid = terminal_pid(rows, me)
+    tree = window_panes(rows, term_pid=tid, self_pid=me) if tid else []
+    records = _tag_records(data, tree)
     return {
         "mux": "wt",
         "count": int(data.get("count") or 0),
         "hwnd": data.get("hwnd"),
         "title": data.get("title"),
-        "panes": [
-            {
-                "id": p.get("id"),
-                "exited": p.get("exited"),
-                "focus": p.get("focus"),
-                "preview": p.get("preview"),
-            }
-            for p in (data.get("panes") or [])
-        ],
+        "current": os.environ.get("WT_SESSION"),
+        "panes": records,
     }
 
 
 def read_pane_content(
-    pane_id: int, *, info: DetectResult | None = None, snapshot: dict | None = None
+    target: str | int,
+    *,
+    info: DetectResult | None = None,
+    snapshot: dict | None = None,
 ) -> dict:
     info = require_mux(info)
     if snapshot is not None:
         panes = snapshot.get("panes") or []
-        if pane_id < 0 or pane_id >= len(panes):
-            raise MuxError(f"本窗口没有窗格 {pane_id}")
-        p = panes[pane_id]
-        return {"mux": info.mux, "id": pane_id, "text": p.get("text") or p.get("preview") or ""}
+        idx = resolve_pane(str(target), panes)
+        p = panes[idx]
+        return {
+            "mux": info.mux,
+            "id": idx,
+            "pane_id": p.get("pane_id"),
+            "text": p.get("text") or p.get("preview") or "",
+        }
     if info.mux != "wt":
         raise MuxError("herdr pane read 尚未接到这条原语")
+    listed = count_panes(info=info)
+    idx = resolve_pane(str(target), listed.get("panes") or [])
     try:
-        data = uia_read_pane(pane_id)
+        data = uia_read_pane(idx)
     except RuntimeError as exc:
         raise MuxError(str(exc)) from exc
+    rec = (listed.get("panes") or [])[idx]
     data["mux"] = "wt"
+    data["pane_id"] = rec.get("pane_id")
+    data["wt_session"] = rec.get("wt_session")
     return data
 
 
@@ -227,12 +287,18 @@ def close_pane(
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
-        if t.isdigit():
+        if t.isdigit() or "-" in t:
+            listed = count_panes(info=info)
+            idx = resolve_pane(t, listed.get("panes") or [])
+            rec = (listed.get("panes") or [])[idx]
+            if rec.get("current"):
+                raise MuxError("不能关当前窗格")
             try:
-                data = close_term(int(t))
+                data = close_term(idx)
             except RuntimeError as exc:
                 raise MuxError(str(exc)) from exc
             data["mux"] = "wt"
+            data["pane_id"] = rec.get("pane_id")
             return data
         return _close_wt(
             t,
@@ -342,11 +408,13 @@ def _split_wt(
 
 
 def _wt_spawn_argv(cmd: str) -> list[str]:
-    """Argv for the new pane. WT splits on unescaped ';' (BuildCommands)."""
-    if ";" not in cmd:
-        return _cmd_tokens(cmd, posix=False)
+    """Argv for the new pane. Inject WORKSPACE_* like Herdr injects HERDR_PANE_ID."""
+    pane_id = "p-" + uuid.uuid4().hex[:8]
+    wrapper = (
+        f"$env:WORKSPACE_ENV='1'; $env:WORKSPACE_PANE_ID='{pane_id}'; {cmd}"
+    )
     shell = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
-    blob = base64.b64encode(cmd.encode("utf-16-le")).decode("ascii")
+    blob = base64.b64encode(wrapper.encode("utf-16-le")).decode("ascii")
     return [shell, "-NoProfile", "-EncodedCommand", blob]
 
 
