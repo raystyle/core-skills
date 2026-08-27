@@ -25,7 +25,7 @@ def test_listen_timeout_zero_drains(tmp_path: Path) -> None:
     got: list[str] = []
     n = listen(tmp_path, timeout=0, emit=got.append)
     assert n == 2
-    assert "".join(got) == "a\nb\n"
+    assert sorted(got) == ["a\n", "b\n"]
     assert pending(tmp_path) == []
 
 
