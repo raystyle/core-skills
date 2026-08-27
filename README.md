@@ -1,6 +1,6 @@
 # core-skills
 
-> 一句话定位：一组用 uv 维护的项目级 CLI；当前可用的是 `project`（AGENTS.md+CLAUDE.md 结构检查、skill 健康度、改文件看文档 / 提交更新文档）。
+> 一句话定位：一组用 uv 维护的项目级 CLI。当前可用：`project`（文档结构/健康度/git hook）、`workspace`（wt/herdr 检测、窗格原语、文件信箱）。
 
 ## 快速开始
 
@@ -8,15 +8,18 @@
 cd D:\core-skills
 uv sync
 uv run project init
+uv run workspace init
 uv run project check .
 uv run project hooks install
+uv run workspace detect
 ```
 
 ## 目录结构
 
 ```
 core-skills/
-  packages/project/   # project 命令
+  packages/project/     # project 命令
+  packages/workspace/   # workspace 命令
   tests/              # 回归测试
   docs/               # 文档地图
 ```
@@ -38,6 +41,10 @@ uv run project check --docs --strict
 uv run project hooks install         # git pre-push：代码改了文档没动则提醒
 uv run project check --sync          # 手动跑同一扫描（相对上游）
 uv run project hooks status
+uv run workspace detect
+uv run workspace split right
+uv run workspace pipe send "hello"
+uv run workspace pipe listen --timeout 0
 uv run pytest
 ```
 

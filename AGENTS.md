@@ -1,10 +1,10 @@
 # core-skills — 项目规范
 
-> 项目名 core-skills；对外命令目前只有 `project`。本文件是开发协作规则唯一权威源。
+> 项目名 core-skills；对外命令目前是 `project` 与 `workspace`。本文件是开发协作规则唯一权威源。
 
 ## 项目概览
 
-用 uv workspace 维护若干 Python CLI（`project` / `workspace` / `harness`）和对应 skill。本阶段只落地 `project`。
+用 uv workspace 维护若干 Python CLI（`project` / `workspace` / `harness`）和对应 skill。本阶段已落地 `project` 与 `workspace`。
 
 ## 硬规则
 
@@ -20,13 +20,14 @@
 
 ```powershell
 uv run project check .
+uv run workspace detect --json
 uv run pytest
 ```
 
 ## 目录与分类规范
 
 - `packages/project/`：`project` 命令
-- `skills/`：尚未放入（下一阶段）
+- `packages/workspace/`：`workspace` 命令
 - `tests/`：根测试
 
 ## 环境事实

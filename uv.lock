@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 members = [
     "core-skills",
     "coreskills-project",
+    "coreskills-workspace",
 ]
 
 [[package]]
@@ -23,6 +24,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "coreskills-project" },
+    { name = "coreskills-workspace" },
 ]
 
 [package.dev-dependencies]
@@ -31,7 +33,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "coreskills-project", editable = "packages/project" }]
+requires-dist = [
+    { name = "coreskills-project", editable = "packages/project" },
+    { name = "coreskills-workspace", editable = "packages/workspace" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0.0" }]
@@ -40,6 +45,11 @@ dev = [{ name = "pytest", specifier = ">=8.0.0" }]
 name = "coreskills-project"
 version = "0.1.0"
 source = { editable = "packages/project" }
+
+[[package]]
+name = "coreskills-workspace"
+version = "0.1.0"
+source = { editable = "packages/workspace" }
 
 [[package]]
 name = "iniconfig"

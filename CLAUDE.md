@@ -4,8 +4,9 @@
 
 ## Commands
 
-- Init: `uv run project init`
+- Init: `uv run project init`；`uv run workspace init`
 - Check: `uv run project check .`
+- Detect: `uv run workspace detect`
 - Tests: `uv run pytest`
 - Hooks: `uv run project hooks install`（pre-push 扫描关键文档是否随代码更新）
 
@@ -21,8 +22,9 @@ Healthy check output starts with `OK:` or `Summary: 0 error`. Tests: `passed`.
 ## Architecture
 
 - `packages/project/`：`project` CLI（结构检查 + 文档健康度 + git hook）
+- `packages/workspace/`：`workspace` CLI（wt/herdr 检测、窗格原语、文件信箱）
 - `docs/sdlc/`：SDLC 标准结构；`changes/<短名>/` 是单次变更产物
-- `.agents/skills/` 与 `.claude/skills/`：`project init` 各写一份独立拷贝
+- `.agents/skills/` 与 `.claude/skills/`：`project init` / `workspace init` 各写一份独立拷贝
 
 ## Things Claude gets wrong
 

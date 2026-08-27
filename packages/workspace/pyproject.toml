@@ -1,0 +1,14 @@
+[project]
+name = "coreskills-workspace"
+version = "0.1.0"
+description = "Detect wt/herdr, unified pane split/list/focus/close, file inbox for agents"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+workspace = "coreskills_workspace.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"

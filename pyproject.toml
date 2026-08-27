@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "coreskills-project",
+    "coreskills-workspace",
 ]
 
 [tool.uv]
@@ -14,6 +15,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 coreskills-project = { workspace = true, editable = true }
+coreskills-workspace = { workspace = true, editable = true }
 
 [dependency-groups]
 dev = [
