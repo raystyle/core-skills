@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from .skills_layout import dissolve_link, skill_install_dirs
+from .skills_layout import skill_install_dirs
 
 SKILL_NAME = "project"
 
@@ -20,8 +20,6 @@ def init_project(root: Path, *, force: bool = False) -> list[str]:
         raise FileNotFoundError(f"bundled skill missing: {src / 'SKILL.md'}")
     actions: list[str] = []
     for base in skill_install_dirs(root):
-        actions.extend(dissolve_link(base, root))
-        actions.extend(dissolve_link(base / SKILL_NAME, root))
         dest = base / SKILL_NAME
         actions.extend(_copy_tree(src, dest, root, force=force))
         actions.extend(_strip_references_readme(dest, root))

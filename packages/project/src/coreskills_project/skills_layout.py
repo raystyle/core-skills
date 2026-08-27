@@ -38,26 +38,3 @@ def iter_skill_mds(root: Path, *, project_level: bool = False) -> list[Path]:
             seen.add(key)
             found.append(md)
     return found
-
-
-def is_link_dir(path: Path) -> bool:
-    try:
-        if path.is_symlink():
-            return True
-        if path.is_junction():
-            return True
-    except OSError:
-        return False
-    return False
-
-
-def dissolve_link(path: Path, root: Path) -> list[str]:
-    """Drop a symlink/junction so a real directory can be created in its place."""
-    if not is_link_dir(path):
-        return []
-    path.unlink()
-    try:
-        rel = path.relative_to(root).as_posix()
-    except ValueError:
-        rel = str(path)
-    return [f"removed {rel}（原为别名，改为独立目录）"]

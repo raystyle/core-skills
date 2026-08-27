@@ -11,7 +11,7 @@
 
 - `project check` 不再建议「去建 skill」；只扫描已有项目级 SKILL.md 是否符合 agentskills 规范
 
-- 项目 skill 同时装到 `.agents/skills/` 与 `.claude/skills/`（独立拷贝，不再用 gitignored 别名）
+- 项目 skill 同时装到 `.agents/skills/` 与 `.claude/skills/`（两份独立拷贝，不用 junction / symlink）
 - SDLC 文档结构：`REVIEW.md`、`docs/sdlc/templates/{intent,spec,plan}.md`、`docs/sdlc/changes/`；`CLAUDE.md` 补 Architecture / Verifying
 - `project check` 先检 SDLC 层再检本仓层（AGENTS 并存、禁止 rules、skill）
 - 文档健康度：两文件互相引用、SKILL.md 须有 name/description

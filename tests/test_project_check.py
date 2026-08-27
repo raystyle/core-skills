@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 from coreskills_project.cli import main
@@ -182,35 +180,3 @@ def test_init_fills_missing_references_without_force(tmp_path: Path) -> None:
     assert (claude / "SKILL.md").is_file()
     assert (claude / "references" / "layout.md").is_file()
     assert not (claude / "references" / "README.md").exists()
-
-
-def test_init_replaces_claude_alias_with_real_copy(tmp_path: Path) -> None:
-    agents = tmp_path / ".agents" / "skills"
-    claude = tmp_path / ".claude" / "skills"
-    agents.mkdir(parents=True)
-    claude.parent.mkdir(parents=True)
-    _link_dir(agents, claude)
-    assert main(["init", str(tmp_path)]) == 0
-    assert not claude.is_symlink()
-    assert not claude.is_junction()
-    assert (agents / "project" / "SKILL.md").is_file()
-    assert (claude / "project" / "SKILL.md").is_file()
-    assert agents.resolve() != claude.resolve()
-    (agents / "project" / "references" / "only-agents.md").write_text("x\n", encoding="utf-8")
-    assert not (claude / "project" / "references" / "only-agents.md").exists()
-
-
-def _link_dir(src: Path, dst: Path) -> None:
-    try:
-        os.symlink(src, dst, target_is_directory=True)
-        return
-    except OSError:
-        pass
-    proc = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(dst), str(src.resolve())],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    assert proc.returncode == 0, proc.stderr or proc.stdout
