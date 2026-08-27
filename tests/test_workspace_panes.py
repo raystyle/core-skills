@@ -7,7 +7,15 @@ from pathlib import Path
 import pytest
 
 from coreskills_workspace.detect import DetectResult
-from coreskills_workspace.panes import MuxError, close_pane, focus_pane, list_panes, split_pane
+from coreskills_workspace.panes import (
+    MuxError,
+    close_pane,
+    count_panes,
+    focus_pane,
+    list_panes,
+    read_pane_content,
+    split_pane,
+)
 from coreskills_workspace.run import RunResult
 from coreskills_workspace.wt_window import Proc, pick_current_window
 
@@ -107,6 +115,24 @@ def test_list_wt_windows_not_process_tree() -> None:
     assert data2["current_window_panes"] == 2
     assert len(data["windows"]) == 2
     assert sum(w["panes"] for w in data["windows"]) == 3
+
+
+def test_count_and_read_from_snapshot() -> None:
+    snap = {
+        "hwnd": 2,
+        "title": "core-skills",
+        "count": 2,
+        "panes": [
+            {"id": 0, "preview": "Claude Code", "text": "Claude Code\nexited", "exited": True},
+            {"id": 1, "preview": "grok", "text": "hello grok", "exited": False},
+        ],
+    }
+    counted = count_panes(info=WT, snapshot=snap)
+    assert counted["count"] == 2
+    read = read_pane_content(1, info=WT, snapshot=snap)
+    assert "hello grok" in read["text"]
+    with pytest.raises(MuxError, match="没有窗格 9"):
+        read_pane_content(9, info=WT, snapshot=snap)
 
 
 def test_list_herdr() -> None:

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .detect import DetectResult, detect
 from .run import RunResult, Runner, run as default_run
+from .wt_terms import close_term, inspect_panes, read_pane as uia_read_pane
 from .wt_window import (
     Killer,
     Proc,
@@ -106,6 +107,63 @@ def split_pane(
     return _split_herdr(side, cwd=cwd_s, title=title, cmd=cmd, size=size, info=info, runner=runner)
 
 
+def count_panes(*, info: DetectResult | None = None, snapshot: dict | None = None) -> dict:
+    info = require_mux(info)
+    if snapshot is not None:
+        return {
+            "mux": info.mux,
+            "count": snapshot.get("count", len(snapshot.get("panes") or [])),
+            "hwnd": snapshot.get("hwnd"),
+            "title": snapshot.get("title"),
+            "panes": snapshot.get("panes") or [],
+        }
+    if info.mux != "wt":
+        listed = list_panes(info=info)
+        panes = listed.get("panes") or []
+        return {"mux": "herdr", "count": len(panes), "panes": panes}
+    try:
+        data = inspect_panes()
+    except RuntimeError as exc:
+        raise MuxError(str(exc)) from exc
+    if data.get("error"):
+        raise MuxError(str(data["error"]))
+    return {
+        "mux": "wt",
+        "count": int(data.get("count") or 0),
+        "hwnd": data.get("hwnd"),
+        "title": data.get("title"),
+        "panes": [
+            {
+                "id": p.get("id"),
+                "exited": p.get("exited"),
+                "focus": p.get("focus"),
+                "preview": p.get("preview"),
+            }
+            for p in (data.get("panes") or [])
+        ],
+    }
+
+
+def read_pane_content(
+    pane_id: int, *, info: DetectResult | None = None, snapshot: dict | None = None
+) -> dict:
+    info = require_mux(info)
+    if snapshot is not None:
+        panes = snapshot.get("panes") or []
+        if pane_id < 0 or pane_id >= len(panes):
+            raise MuxError(f"本窗口没有窗格 {pane_id}")
+        p = panes[pane_id]
+        return {"mux": info.mux, "id": pane_id, "text": p.get("text") or p.get("preview") or ""}
+    if info.mux != "wt":
+        raise MuxError("herdr pane read 尚未接到这条原语")
+    try:
+        data = uia_read_pane(pane_id)
+    except RuntimeError as exc:
+        raise MuxError(str(exc)) from exc
+    data["mux"] = "wt"
+    return data
+
+
 def list_panes(
     *,
     info: DetectResult | None = None,
@@ -169,6 +227,13 @@ def close_pane(
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
+        if t.isdigit():
+            try:
+                data = close_term(int(t))
+            except RuntimeError as exc:
+                raise MuxError(str(exc)) from exc
+            data["mux"] = "wt"
+            return data
         return _close_wt(
             t,
             info=info,

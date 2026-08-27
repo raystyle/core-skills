@@ -13,17 +13,16 @@
 
 wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `pwsh -EncodedCommand`，否则会去启动 `Start-Sleep` 这类词并报 `0x80070002`。
 
-## list / focus / close
+## 同一窗口：count / read / close
 
-依据 [microsoft/terminal AppCommandlineArgs.cpp](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalApp/AppCommandlineArgs.cpp)。完整对照见 `docs/research/wt-cli.md`。
+当前工作台用窗口标题里的目录名认定（不要用前台窗口）。格子 = 该 HWND 下 UIA `TermControl`，编号 0..n-1。
 
-| 命令 | wt | herdr |
-|------|----|-------|
-| `pane list` | 按 HWND（`CASCADIA_HOSTING_WINDOW_CLASS`）列窗口，UIA 数 `TermControl` | `herdr pane list` |
-| `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR`（当前窗口） | `herdr pane focus --direction DIR --current` |
-| `pane focus <n>` | `wt -w 0 focus-pane -t n` | 不支持（不是方向） |
-| `pane close others` | 当前窗口其它格：UIA 格数 + 与当前壳创建时间最近的壳 | `herdr pane close <id>` |
+| 命令 | 做什么 |
+|------|--------|
+| `pane count` | 同一窗口几格 |
+| `pane read n` | 读第 n 格屏幕文本 |
+| `pane close n` | 关掉第 n 格：已退出 → Ctrl+D；仍在跑 → Ctrl+Shift+W |
 
-细节：`docs/research/wt-windows.md`。`WT_SESSION` 是每格一条 GUID。
+`close` 拒绝最后一格，以及 preview 里带 `workspace pane` 的自身格。
 
-不要对 wt 调用未列出的子命令，`--help` / 未知命令会弹 Help 对话框，stdout 是空的。
+`pane list` 仍列出所有 Cascadia 窗口。`docs/research/wt-windows.md`。

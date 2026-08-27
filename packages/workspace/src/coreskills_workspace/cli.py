@@ -10,7 +10,15 @@ from pathlib import Path
 from . import __version__
 from .detect import detect
 from .init import init_workspace
-from .panes import MuxError, close_pane, focus_pane, list_panes, split_pane
+from .panes import (
+    MuxError,
+    close_pane,
+    count_panes,
+    focus_pane,
+    list_panes,
+    read_pane_content,
+    split_pane,
+)
 from .pipe import send as pipe_send, listen as pipe_listen
 
 
@@ -48,21 +56,21 @@ def build_parser() -> argparse.ArgumentParser:
     spl.add_argument("--size", type=float, default=None, help="新窗格占比，如 0.4")
     spl.add_argument("--json", action="store_true")
 
-    pane = sub.add_parser("pane", help="列表 / 聚焦 / 关闭")
+    pane = sub.add_parser("pane", help="同一窗口：count / read / close")
     pane_sub = pane.add_subparsers(dest="pane_command", required=True)
+    pc = pane_sub.add_parser("count", help="当前窗口有几格")
+    pc.add_argument("--json", action="store_true")
+    pr = pane_sub.add_parser("read", help="读指定格的屏幕文本")
+    pr.add_argument("id", type=int)
+    pr.add_argument("--json", action="store_true")
+    pcl = pane_sub.add_parser("close", help="关掉指定格（不能关最后一格/自己）")
+    pcl.add_argument("target")
+    pcl.add_argument("--json", action="store_true")
     pl = pane_sub.add_parser("list")
     pl.add_argument("--json", action="store_true")
     pf = pane_sub.add_parser("focus")
-    pf.add_argument("target", help="方向，或 wt 下的创建序号")
+    pf.add_argument("target")
     pf.add_argument("--json", action="store_true")
-    pc = pane_sub.add_parser("close")
-    pc.add_argument(
-        "target",
-        nargs="?",
-        default="current",
-        help="herdr: id；wt: 窗格序号或 others（本窗口其它格）",
-    )
-    pc.add_argument("--json", action="store_true")
 
     pipe = sub.add_parser("pipe", help="项目级文件信箱 .workspace/inbox")
     pipe_sub = pipe.add_subparsers(dest="pipe_command", required=True)
@@ -139,7 +147,11 @@ def cmd_split(args: argparse.Namespace) -> int:
 
 def cmd_pane(args: argparse.Namespace) -> int:
     try:
-        if args.pane_command == "list":
+        if args.pane_command == "count":
+            data = count_panes()
+        elif args.pane_command == "read":
+            data = read_pane_content(args.id)
+        elif args.pane_command == "list":
             data = list_panes()
         elif args.pane_command == "focus":
             data = focus_pane(args.target)
@@ -149,10 +161,16 @@ def cmd_pane(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     as_json = getattr(args, "json", False)
-    if as_json or args.pane_command == "list":
+    if args.pane_command == "count" and not as_json:
+        print(data.get("count", 0))
+        return 0
+    if args.pane_command == "read" and not as_json:
+        print(data.get("text") or "")
+        return 0
+    if as_json or args.pane_command in {"list", "count", "read", "close"}:
         _print_json(data)
-    else:
-        print(" ".join(f"{k}={v}" for k, v in data.items()))
+        return 0
+    print(" ".join(f"{k}={v}" for k, v in data.items()))
     return 0
 
 
