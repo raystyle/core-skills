@@ -30,7 +30,7 @@ Windows 看 `WT_SESSION`（是否在 Windows Terminal）。Linux 看 `HERDR_ENV`
 
 ## 窗格
 
-`split` / `pane list` / `pane focus` / `pane close` 是统一原语。wt 与 herdr 后端不同：herdr 有窗格 id；wt 只能方向聚焦、关当前格。
+`split` / `pane list` / `pane focus` / `pane close` 是统一原语。wt 与 herdr 后端不同：herdr 有窗格 id；wt 只能方向聚焦，不能关窗格（无 CLI，乱调会弹出帮助表）。
 [references/panes.md](references/panes.md)
 
 ## 信箱

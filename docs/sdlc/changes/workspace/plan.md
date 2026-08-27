@@ -17,7 +17,7 @@ From: `intent.md` / `spec.md`. Status: done.
 
 ## Risks
 
-wt `close-pane` 视本机 Windows Terminal 版本；不支持时命令失败并打印 stderr。
+wt 没有关闭窗格的 CLI。禁止调用 `close-pane`（未知子命令会弹出帮助表）。
 
 ## Proof
 

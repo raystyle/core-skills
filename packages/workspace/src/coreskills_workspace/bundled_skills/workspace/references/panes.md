@@ -17,7 +17,6 @@
 |------|----|-------|
 | `pane list` | 无原生 id，只报 `current` + session | `herdr pane list` |
 | `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR` | `herdr pane focus --direction DIR --current` |
-| `pane close current` | `wt -w 0 close-pane`（关当前格） | 用 `HERDR_PANE_ID` |
-| `pane close <id>` | 不支持 | `herdr pane close <id>` |
+| `pane close` | **不支持**（wt 无此 CLI；乱调会弹出帮助表） | `herdr pane close <id>` 或 current=`HERDR_PANE_ID` |
 
 focus 不接受窗格 id，只接受方向。

@@ -82,7 +82,7 @@ def list_panes(*, info: DetectResult | None = None, runner: Runner | None = None
             "session": info.session,
             "panes": [{"id": "current", "note": "wt CLI 不能列出窗格 id"}],
             "focus": "left/right/up/down",
-            "close": "current",
+            "close": None,
         }
     result = _check(_exec(runner, [_bin(info), "pane", "list"]), what="herdr pane list")
     panes = _parse_herdr_list(result.stdout)
@@ -118,10 +118,9 @@ def close_pane(
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
-        if t.lower() != "current":
-            raise MuxError("wt 只能关闭当前聚焦窗格：workspace pane close current")
-        _check(_exec(runner, [_bin(info), "-w", "0", "close-pane"]), what="wt close-pane")
-        return {"mux": "wt", "closed": "current"}
+        raise MuxError(
+            "wt CLI 没有关闭窗格的命令；调用 close-pane 会弹出帮助表，请手动关标签"
+        )
     if t.lower() == "current":
         t = info.pane or ""
         if not t:

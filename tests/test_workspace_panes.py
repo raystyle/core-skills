@@ -89,20 +89,16 @@ def test_focus_rejects_pane_id() -> None:
         focus_pane("w1:p2", info=HERDR, runner=lambda a: RunResult(list(a), 0, "", ""))
 
 
-def test_close_wt_current() -> None:
+def test_close_wt_does_not_invoke_wt() -> None:
     calls: list[list[str]] = []
 
     def runner(argv):
         calls.append(list(argv))
         return RunResult(list(argv), 0, "", "")
 
-    close_pane("current", info=WT, runner=runner)
-    assert calls[0] == ["wt", "-w", "0", "close-pane"]
-
-
-def test_close_wt_rejects_id() -> None:
-    with pytest.raises(MuxError, match="当前聚焦"):
-        close_pane("w1:p2", info=WT, runner=lambda a: RunResult(list(a), 0, "", ""))
+    with pytest.raises(MuxError, match="没有关闭窗格"):
+        close_pane("current", info=WT, runner=runner)
+    assert calls == []
 
 
 def test_close_herdr_id() -> None:
