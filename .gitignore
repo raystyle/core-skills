@@ -1,0 +1,32 @@
+# 智能体个人/本机（.agents/skills 入库；.claude/skills 由 hooks install 做成别名）
+.reasonix/
+.claude/settings.local.json
+.claude/skills
+CLAUDE.local.md
+.codex/
+.kimi/
+.kimi-code/
+.cursor/
+.grok/
+
+# 密钥/凭据
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials.json
+
+# 衍生垃圾
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+node_modules/
+.uv-cache/
+.pytest_cache/
+.rmux_tasks/
+.evo_tasks/
