@@ -56,7 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
     pf.add_argument("target", help="方向，或 wt 下的创建序号")
     pf.add_argument("--json", action="store_true")
     pc = pane_sub.add_parser("close")
-    pc.add_argument("target", nargs="?", default="current")
+    pc.add_argument(
+        "target",
+        nargs="?",
+        default="current",
+        help="herdr: id；wt: 窗格序号或 others（本窗口其它格）",
+    )
     pc.add_argument("--json", action="store_true")
 
     pipe = sub.add_parser("pipe", help="项目级文件信箱 .workspace/inbox")

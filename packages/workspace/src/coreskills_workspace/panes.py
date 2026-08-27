@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shlex
 import shutil
 from collections.abc import Sequence
@@ -11,6 +12,14 @@ from pathlib import Path
 
 from .detect import DetectResult, detect
 from .run import RunResult, Runner, run as default_run
+from .wt_window import (
+    Killer,
+    Proc,
+    kill_pid,
+    snapshot_processes,
+    terminal_pid,
+    window_panes,
+)
 
 SPLIT_RIGHT = {"right", "v", "vertical"}
 SPLIT_DOWN = {"down", "h", "horizontal"}
@@ -94,22 +103,16 @@ def split_pane(
     return _split_herdr(side, cwd=cwd_s, title=title, cmd=cmd, size=size, info=info, runner=runner)
 
 
-def list_panes(*, info: DetectResult | None = None, runner: Runner | None = None) -> dict:
+def list_panes(
+    *,
+    info: DetectResult | None = None,
+    runner: Runner | None = None,
+    procs: list[Proc] | None = None,
+    self_pid: int | None = None,
+) -> dict:
     info = require_mux(info)
     if info.mux == "wt":
-        return {
-            "mux": "wt",
-            "session": info.session,
-            "panes": [
-                {
-                    "id": "current",
-                    "note": "wt 无 list；窗格 id 按创建顺序从 0 起，用 pane focus <n>",
-                }
-            ],
-            "focus": "left/right/up/down|previous|first|<n>",
-            "close": None,
-            "wt_commands": list(WT_SUBCOMMANDS),
-        }
+        return _list_wt(info, procs=procs, self_pid=self_pid)
     result = _check(_exec(runner, [_bin(info), "pane", "list"]), what="herdr pane list")
     panes = _parse_herdr_list(result.stdout)
     return {"mux": "herdr", "session": info.session, "panes": panes}
@@ -152,13 +155,15 @@ def close_pane(
     *,
     info: DetectResult | None = None,
     runner: Runner | None = None,
+    procs: list[Proc] | None = None,
+    self_pid: int | None = None,
+    killer: Killer | None = None,
 ) -> dict:
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
-        raise MuxError(
-            "wt 没有 close-pane（见 microsoft/terminal AppCommandlineArgs.cpp）；"
-            "未知子命令会弹出 Help 对话框"
+        return _close_wt(
+            t, info=info, procs=procs, self_pid=self_pid, killer=killer
         )
     if t.lower() == "current":
         t = info.pane or ""
@@ -166,6 +171,67 @@ def close_pane(
             raise MuxError("herdr 关闭需要窗格 id（HERDR_PANE_ID 为空）")
     _check(_exec(runner, [_bin(info), "pane", "close", t]), what="herdr pane close")
     return {"mux": "herdr", "closed": t}
+
+
+def _list_wt(
+    info: DetectResult,
+    *,
+    procs: list[Proc] | None,
+    self_pid: int | None,
+) -> dict:
+    rows = procs if procs is not None else snapshot_processes()
+    me = os.getpid() if self_pid is None else self_pid
+    tid = terminal_pid(rows, me)
+    panes = window_panes(rows, term_pid=tid, self_pid=me) if tid else []
+    return {
+        "mux": "wt",
+        "session": info.session,
+        "window_pid": tid,
+        "scope": "current-window",
+        "panes": panes,
+        "focus": "left/right/up/down|previous|first|<n>",
+        "close": "<n>|others（结束本窗口里其它格的壳进程；不能关当前格）",
+    }
+
+
+def _close_wt(
+    target: str,
+    *,
+    info: DetectResult,
+    procs: list[Proc] | None,
+    self_pid: int | None,
+    killer: Killer | None,
+) -> dict:
+    rows = procs if procs is not None else snapshot_processes()
+    me = os.getpid() if self_pid is None else self_pid
+    tid = terminal_pid(rows, me)
+    if tid is None:
+        raise MuxError("找不到当前 Windows Terminal 窗口")
+    panes = window_panes(rows, term_pid=tid, self_pid=me)
+    if target.lower() == "current":
+        raise MuxError("不能关当前窗格")
+    if target.lower() == "others":
+        chosen = [p for p in panes if not p["current"]]
+    else:
+        chosen = [p for p in panes if p["id"] == target]
+        if not chosen:
+            raise MuxError(f"本窗口没有窗格 {target}")
+        if chosen[0]["current"]:
+            raise MuxError("不能关当前窗格")
+    kill = killer or kill_pid
+    closed: list[str] = []
+    for p in chosen:
+        pid = p.get("shell_pid")
+        if not pid:
+            continue
+        kill(int(pid))
+        closed.append(p["id"])
+    return {
+        "mux": "wt",
+        "scope": "current-window",
+        "closed": closed,
+        "session": info.session,
+    }
 
 
 def _split_wt(

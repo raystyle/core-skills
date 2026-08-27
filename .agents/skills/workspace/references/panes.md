@@ -19,9 +19,9 @@ wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `p
 
 | 命令 | wt | herdr |
 |------|----|-------|
-| `pane list` | 无 list API；id 是创建序号 0,1,2… | `herdr pane list` |
+| `pane list` | 只扫**当前 WT 窗口**进程树（OpenConsole+壳） | `herdr pane list` |
 | `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR` | `herdr pane focus --direction DIR --current` |
 | `pane focus <n>` | `wt -w 0 focus-pane -t n` | 不支持（不是方向） |
-| `pane close` | **没有这个子命令** | `herdr pane close <id>` |
+| `pane close <n>\|others` | 结束本窗口里该格的壳进程（不能关当前格；不调 wt close-pane） | `herdr pane close <id>` |
 
 不要对 wt 调用未列出的子命令，`--help` / 未知命令会弹 Help 对话框，stdout 是空的。

@@ -7,6 +7,7 @@
 - `workspace` CLI：`detect`（Windows=wt / Linux=herdr）、`split` + `pane list/focus/close`、`.workspace/inbox` 文件信箱（`pipe send` / `pipe listen`）
 - wt 的 `pane close` 直接拒绝：源码无 close-pane；`pane focus <n>` 走 `focus-pane -t`（见 docs/research/wt-cli.md）
 - `split --cmd` 含 `;` 时改 `pwsh -EncodedCommand`，避免 wt 把分号切成下一条命令（`0x80070002`）
+- wt `pane list` 只列当前窗口进程树；`pane close <n>|others` 结束本窗口其它格的壳（不关当前格）
 - `workspace init`：自带 skill 整树拷到 `.agents/skills/workspace/` 与 `.claude/skills/workspace/` 各一份
 - `project init`：把自带 `project` skill 整树拷到 `.agents/skills/project/` 与 `.claude/skills/project/` 各一份；已存在则跳过，`--force` 整目录覆盖
 - 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）；索引在 `SKILL.md`，`references/` 不放 README.md
