@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
     pl = pane_sub.add_parser("list")
     pl.add_argument("--json", action="store_true")
     pf = pane_sub.add_parser("focus")
-    pf.add_argument("target", help="left/right/up/down")
+    pf.add_argument("target", help="方向，或 wt 下的创建序号")
     pf.add_argument("--json", action="store_true")
     pc = pane_sub.add_parser("close")
     pc.add_argument("target", nargs="?", default="current")

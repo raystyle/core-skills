@@ -14,6 +14,25 @@ from .run import RunResult, Runner, run as default_run
 SPLIT_RIGHT = {"right", "v", "vertical"}
 SPLIT_DOWN = {"down", "h", "horizontal"}
 FOCUS_DIRS = {"left", "right", "up", "down"}
+# microsoft/terminal AppCommandlineArgs.cpp focusDirectionMap
+WT_MOVE_FOCUS = FOCUS_DIRS | {"previous", "first", "nextInOrder", "previousInOrder"}
+# Same file: _buildParser subcommands. There is no close-pane.
+WT_SUBCOMMANDS = (
+    "new-tab",
+    "nt",
+    "split-pane",
+    "sp",
+    "focus-tab",
+    "ft",
+    "move-focus",
+    "mf",
+    "move-pane",
+    "mp",
+    "swap-pane",
+    "focus-pane",
+    "fp",
+    "x-save",
+)
 
 
 class MuxError(RuntimeError):
@@ -80,9 +99,15 @@ def list_panes(*, info: DetectResult | None = None, runner: Runner | None = None
         return {
             "mux": "wt",
             "session": info.session,
-            "panes": [{"id": "current", "note": "wt CLI 不能列出窗格 id"}],
-            "focus": "left/right/up/down",
+            "panes": [
+                {
+                    "id": "current",
+                    "note": "wt 无 list；窗格 id 按创建顺序从 0 起，用 pane focus <n>",
+                }
+            ],
+            "focus": "left/right/up/down|previous|first|<n>",
             "close": None,
+            "wt_commands": list(WT_SUBCOMMANDS),
         }
     result = _check(_exec(runner, [_bin(info), "pane", "list"]), what="herdr pane list")
     panes = _parse_herdr_list(result.stdout)
@@ -93,15 +118,27 @@ def focus_pane(
     target: str, *, info: DetectResult | None = None, runner: Runner | None = None
 ) -> dict:
     info = require_mux(info)
-    d = target.lower().strip()
-    if d not in FOCUS_DIRS:
-        raise MuxError("pane focus 只接受方向：left/right/up/down")
+    t = target.strip()
     if info.mux == "wt":
+        if t.isdigit():
+            _check(
+                _exec(runner, [_bin(info), "-w", "0", "focus-pane", "-t", t]),
+                what="wt focus-pane",
+            )
+            return {"mux": "wt", "focused": t, "via": "focus-pane"}
+        d = t.lower()
+        if d not in WT_MOVE_FOCUS:
+            raise MuxError(
+                "wt pane focus 接受方向（left/right/up/down/previous/first）或创建序号整数"
+            )
         _check(
             _exec(runner, [_bin(info), "-w", "0", "move-focus", d]),
             what="wt move-focus",
         )
-        return {"mux": "wt", "focused": d}
+        return {"mux": "wt", "focused": d, "via": "move-focus"}
+    d = t.lower()
+    if d not in FOCUS_DIRS:
+        raise MuxError("herdr pane focus 只接受方向：left/right/up/down")
     _check(
         _exec(runner, [_bin(info), "pane", "focus", "--direction", d, "--current"]),
         what="herdr pane focus",
@@ -119,7 +156,8 @@ def close_pane(
     t = target.strip() or "current"
     if info.mux == "wt":
         raise MuxError(
-            "wt CLI 没有关闭窗格的命令；调用 close-pane 会弹出帮助表，请手动关标签"
+            "wt 没有 close-pane（见 microsoft/terminal AppCommandlineArgs.cpp）；"
+            "未知子命令会弹出 Help 对话框"
         )
     if t.lower() == "current":
         t = info.pane or ""

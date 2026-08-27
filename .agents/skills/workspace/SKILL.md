@@ -17,7 +17,7 @@ uv run workspace init
 uv run workspace detect
 uv run workspace split right|down [--cmd ...] [--cwd ...] [--title ...] [--size 0.4]
 uv run workspace pane list
-uv run workspace pane focus left|right|up|down
+uv run workspace pane focus left|right|up|down|<n>
 uv run workspace pane close [id|current]
 uv run workspace pipe send "文本"
 uv run workspace pipe listen
@@ -30,7 +30,7 @@ Windows 看 `WT_SESSION`（是否在 Windows Terminal）。Linux 看 `HERDR_ENV`
 
 ## 窗格
 
-`split` / `pane list` / `pane focus` / `pane close` 是统一原语。wt 与 herdr 后端不同：herdr 有窗格 id；wt 只能方向聚焦，不能关窗格（无 CLI，乱调会弹出帮助表）。
+`split` / `pane list` / `pane focus` / `pane close` 是统一原语。wt：`move-focus` 方向或 `focus-pane -t <n>`，没有 close。herdr：有窗格 id，可 close。
 [references/panes.md](references/panes.md)
 
 ## 信箱

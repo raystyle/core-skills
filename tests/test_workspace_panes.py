@@ -80,11 +80,24 @@ def test_focus_direction_wt() -> None:
         calls.append(list(argv))
         return RunResult(list(argv), 0, "", "")
 
-    focus_pane("left", info=WT, runner=runner)
+    data = focus_pane("left", info=WT, runner=runner)
     assert calls[0] == ["wt", "-w", "0", "move-focus", "left"]
+    assert data["via"] == "move-focus"
 
 
-def test_focus_rejects_pane_id() -> None:
+def test_focus_wt_index() -> None:
+    calls: list[list[str]] = []
+
+    def runner(argv):
+        calls.append(list(argv))
+        return RunResult(list(argv), 0, "", "")
+
+    data = focus_pane("1", info=WT, runner=runner)
+    assert calls[0] == ["wt", "-w", "0", "focus-pane", "-t", "1"]
+    assert data["via"] == "focus-pane"
+
+
+def test_focus_rejects_herdr_pane_id() -> None:
     with pytest.raises(MuxError, match="方向"):
         focus_pane("w1:p2", info=HERDR, runner=lambda a: RunResult(list(a), 0, "", ""))
 
@@ -96,7 +109,7 @@ def test_close_wt_does_not_invoke_wt() -> None:
         calls.append(list(argv))
         return RunResult(list(argv), 0, "", "")
 
-    with pytest.raises(MuxError, match="没有关闭窗格"):
+    with pytest.raises(MuxError, match="没有 close-pane"):
         close_pane("current", info=WT, runner=runner)
     assert calls == []
 

@@ -13,10 +13,13 @@
 
 ## list / focus / close
 
+依据 [microsoft/terminal AppCommandlineArgs.cpp](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalApp/AppCommandlineArgs.cpp)。完整对照见 `docs/research/wt-cli.md`。
+
 | 命令 | wt | herdr |
 |------|----|-------|
-| `pane list` | 无原生 id，只报 `current` + session | `herdr pane list` |
+| `pane list` | 无 list API；id 是创建序号 0,1,2… | `herdr pane list` |
 | `pane focus left\|right\|up\|down` | `wt -w 0 move-focus DIR` | `herdr pane focus --direction DIR --current` |
-| `pane close` | **不支持**（wt 无此 CLI；乱调会弹出帮助表） | `herdr pane close <id>` 或 current=`HERDR_PANE_ID` |
+| `pane focus <n>` | `wt -w 0 focus-pane -t n` | 不支持（不是方向） |
+| `pane close` | **没有这个子命令** | `herdr pane close <id>` |
 
-focus 不接受窗格 id，只接受方向。
+不要对 wt 调用未列出的子命令，`--help` / 未知命令会弹 Help 对话框，stdout 是空的。

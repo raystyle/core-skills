@@ -30,3 +30,4 @@ node_modules/
 .rmux_tasks/
 .evo_tasks/
 .workspace/
+help.txt
