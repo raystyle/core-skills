@@ -4,8 +4,10 @@ SKILL.md 格式跟 [Agent Skills](https://agentskills.io/specification)。**发�
 
 | 路径 | 谁原生扫 |
 |------|----------|
-| `.agents/skills/<name>/SKILL.md` | Codex 等（跨端真源） |
-| `.claude/skills/` | Claude Code（本 CLI 做成指向 `.agents/skills` 的别名） |
+| `.agents/skills/<name>/SKILL.md` | Codex 等 |
+| `.claude/skills/<name>/SKILL.md` | Claude Code |
+
+`project init` 把自带 skill **同时写入这两个目录**（独立拷贝，不是别名）。
 
 ```
 uv run project init          # 安装自带 project skill

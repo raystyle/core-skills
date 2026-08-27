@@ -13,7 +13,7 @@
 
 ```markdown
 - `uv sync` 后出现 `.venv/`。[实证: 本机 uv 0.12]
-- 别名未接上是因为 Windows 联接失败。[推断: 据 hooks install 输出推得]
+- 推送扫描不拦 `git push` 是因为 hook 退出码恒为 0。[推断: 据 hooks.py run_pre_push 返回值]
 ```
 
 不要用「实测」修辞却不给证据。不要把参数化知识标成实证。

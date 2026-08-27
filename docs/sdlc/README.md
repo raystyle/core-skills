@@ -10,7 +10,7 @@
 |------|------|
 | `CLAUDE.md` | Commands、Conventions、Architecture、Things Claude gets wrong、Verifying your work |
 | `REVIEW.md` | PR 怎么审：对照 intent/spec/plan |
-| `.agents/skills/*/SKILL.md` | 可复用流程（跨端发现路径）；Claude 用 `.claude/skills` 别名。不用 `.claude/rules/` |
+| `.agents/skills/*/SKILL.md` 与 `.claude/skills/*/SKILL.md` | 可复用流程（两份独立拷贝）。不用 `.claude/rules/` |
 
 一次变更一条链（拷模板到 `changes/<短名>/`，下一阶段读上一阶段）：
 

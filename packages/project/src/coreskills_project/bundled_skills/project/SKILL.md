@@ -13,7 +13,7 @@ description: >
 ## 命令
 
 ```
-uv run project init           # 本 skill → .agents/skills + .claude/skills 别名
+uv run project init           # 本 skill → .agents/skills 与 .claude/skills（各一份）
 uv run project check
 uv run project hooks install  # pre-push：代码改了文档没动则提醒
 ```

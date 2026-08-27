@@ -4,14 +4,14 @@
 
 ### 新增
 
-- `project init`：把自带 `project` skill 装到 `.agents/skills/project/`，并接上 `.claude/skills` 别名
-- 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）
+- `project init`：把自带 `project` skill 同时写入 `.agents/skills/project/` 与 `.claude/skills/project/`（独立拷贝）
+- 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）；索引在 `SKILL.md`，`references/` 不放 README.md
 
 ### 变更
 
 - `project check` 不再建议「去建 skill」；只扫描已有项目级 SKILL.md 是否符合 agentskills 规范
 
-- 项目 skill 真源改为 `.agents/skills/`；`hooks install` 把 `.claude/skills` 链过去（Claude 发现路径）
+- 项目 skill 同时装到 `.agents/skills/` 与 `.claude/skills/`（独立拷贝，不再用 gitignored 别名）
 - SDLC 文档结构：`REVIEW.md`、`docs/sdlc/templates/{intent,spec,plan}.md`、`docs/sdlc/changes/`；`CLAUDE.md` 补 Architecture / Verifying
 - `project check` 先检 SDLC 层再检本仓层（AGENTS 并存、禁止 rules、skill）
 - 文档健康度：两文件互相引用、SKILL.md 须有 name/description

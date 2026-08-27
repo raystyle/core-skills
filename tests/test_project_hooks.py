@@ -5,7 +5,6 @@ from pathlib import Path
 
 from coreskills_project.cli import main
 from coreskills_project.hooks import install_hooks
-from coreskills_project.skills_layout import claude_alias_ok
 from coreskills_project.sync import check_code_doc_sync
 
 
@@ -54,7 +53,6 @@ def test_install_writes_pre_push(tmp_path: Path) -> None:
     assert (tmp_path / ".githooks" / "pre-push").exists()
     assert not (tmp_path / ".githooks" / "pre-commit").exists()
     assert not (tmp_path / ".claude" / "settings.json").exists()
-    assert claude_alias_ok(tmp_path)
     assert any("pre-push" in a for a in actions)
 
 

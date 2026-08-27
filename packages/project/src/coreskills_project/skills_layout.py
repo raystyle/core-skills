@@ -1,8 +1,7 @@
-"""Project skills live in .agents/skills (cross-tool). Claude gets an alias."""
+"""Project skills live in both .agents/skills and .claude/skills (independent copies)."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 
@@ -12,6 +11,11 @@ def agents_skills_dir(root: Path) -> Path:
 
 def claude_skills_dir(root: Path) -> Path:
     return root / ".claude" / "skills"
+
+
+def skill_install_dirs(root: Path) -> tuple[Path, Path]:
+    """Generic discovery path, then Claude Code discovery path."""
+    return agents_skills_dir(root), claude_skills_dir(root)
 
 
 def iter_skill_mds(root: Path, *, project_level: bool = False) -> list[Path]:
@@ -36,70 +40,24 @@ def iter_skill_mds(root: Path, *, project_level: bool = False) -> list[Path]:
     return found
 
 
-def claude_alias_ok(root: Path) -> bool:
-    src = agents_skills_dir(root)
-    dst = claude_skills_dir(root)
-    if not src.is_dir() or not dst.exists():
-        return False
+def is_link_dir(path: Path) -> bool:
     try:
-        return src.resolve() == dst.resolve()
+        if path.is_symlink():
+            return True
+        if path.is_junction():
+            return True
     except OSError:
         return False
+    return False
 
 
-def ensure_claude_skills_alias(root: Path) -> list[str]:
-    """Point .claude/skills at .agents/skills (relative symlink, else junction)."""
-    src = agents_skills_dir(root)
-    dst = claude_skills_dir(root)
-    src.mkdir(parents=True, exist_ok=True)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-
-    if claude_alias_ok(root):
-        return [".claude/skills 已指向 .agents/skills"]
-
-    if dst.exists() and not dst.is_symlink():
-        leftover = [p for p in dst.rglob("*") if p.is_file()]
-        if leftover:
-            return [
-                "跳过 Claude 别名：.claude/skills 仍是独立目录，"
-                "请把 skill 迁到 .agents/skills 后再跑 hooks install"
-            ]
-        _rmtree(dst)
-
-    if dst.is_symlink() or dst.is_junction():
-        dst.unlink()
-
-    rel = os.path.relpath(src, dst.parent)
+def dissolve_link(path: Path, root: Path) -> list[str]:
+    """Drop a symlink/junction so a real directory can be created in its place."""
+    if not is_link_dir(path):
+        return []
+    path.unlink()
     try:
-        os.symlink(rel, dst, target_is_directory=True)
-        return [f"linked .claude/skills -> {rel}（Claude 发现路径）"]
-    except OSError:
-        pass
-
-    # Windows: junction needs an absolute target
-    import subprocess
-
-    if dst.exists():
-        try:
-            dst.unlink()
-        except OSError:
-            _rmtree(dst)
-    proc = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(dst), str(src.resolve())],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if proc.returncode == 0:
-        return ["junction .claude/skills -> .agents/skills（Claude 发现路径）"]
-    return [f"未能创建 Claude 别名: {(proc.stderr or proc.stdout).strip()}"]
-
-
-def _rmtree(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-        return
-    for child in path.iterdir():
-        _rmtree(child)
-    path.rmdir()
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        rel = str(path)
+    return [f"removed {rel}（原为别名，改为独立目录）"]

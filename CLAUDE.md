@@ -22,7 +22,7 @@ Healthy check output starts with `OK:` or `Summary: 0 error`. Tests: `passed`.
 
 - `packages/project/`：`project` CLI（结构检查 + 文档健康度 + git hook）
 - `docs/sdlc/`：SDLC 标准结构；`changes/<短名>/` 是单次变更产物
-- `.agents/skills/`：项目 skill 真源；`.claude/skills` 是给 Claude 的别名
+- `.agents/skills/` 与 `.claude/skills/`：`project init` 各写一份独立拷贝
 
 ## Things Claude gets wrong
 

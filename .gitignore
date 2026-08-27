@@ -1,7 +1,6 @@
-# 智能体个人/本机（.agents/skills 入库；.claude/skills 由 hooks install 做成别名）
+# 智能体个人/本机（.agents/skills 与 .claude/skills 入库）
 .reasonix/
 .claude/settings.local.json
-.claude/skills
 CLAUDE.local.md
 .codex/
 .kimi/

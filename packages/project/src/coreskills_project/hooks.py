@@ -6,7 +6,6 @@ import json
 import subprocess
 from pathlib import Path
 
-from .skills_layout import ensure_claude_skills_alias
 from .sync import check_code_doc_sync
 
 GIT_PREPUSH = """\
@@ -113,7 +112,6 @@ def install_hooks(root: Path) -> list[str]:
         "wrote .githooks/pre-push → 推送时扫描关键文档是否随代码更新",
         "git config core.hooksPath .githooks",
     ]
-    actions.extend(ensure_claude_skills_alias(root))
     actions.extend(_strip_claude_filechange_hook(root))
     return actions
 

@@ -12,7 +12,7 @@
 2. 根目录不切进 `packages/` 再跑 uv；一律在仓库根 `uv run`。
 3. 文档先 SDLC 再本仓：常驻 `CLAUDE.md`（五段标题）+ `REVIEW.md` + `docs/sdlc/`；本仓再叠 `AGENTS.md` 并存。
 4. 一次变更走 `docs/sdlc/changes/<短名>/`：intent → spec → plan；实现偏离 plan 则同一 commit 改 plan。
-5. 项目 skill 真源 `.agents/skills/`（`hooks install` 给 Claude 接上 `.claude/skills` 别名）。
+5. 项目 skill 同时写入 `.agents/skills/` 与 `.claude/skills/`（独立拷贝，不是别名）。
 6. 推送时 `pre-push` 会扫关键文档是否随代码更新。
 7. 改代码同步 `CHANGELOG.md` `[Unreleased]`；里程碑翻 `ROADMAP.md`。
 
