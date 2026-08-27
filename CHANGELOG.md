@@ -4,7 +4,7 @@
 
 ### 新增
 
-- `project init`：把自带 `project` skill 同时写入 `.agents/skills/project/` 与 `.claude/skills/project/`（独立拷贝）
+- `project init`：把自带 `project` skill 整树拷到 `.agents/skills/project/` 与 `.claude/skills/project/` 各一份；已存在则跳过，`--force` 整目录覆盖
 - 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）；索引在 `SKILL.md`，`references/` 不放 README.md
 
 ### 变更

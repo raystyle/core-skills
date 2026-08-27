@@ -161,22 +161,28 @@ def test_init_installs_agents_and_claude_copies(tmp_path: Path) -> None:
     assert not any(p.check == "skill" and p.level == "error" for p in problems)
 
 
-def test_init_fills_missing_references_without_force(tmp_path: Path) -> None:
+def test_init_skips_existing_without_force(tmp_path: Path) -> None:
     dest = tmp_path / ".agents" / "skills" / "project"
     dest.mkdir(parents=True)
     (dest / "SKILL.md").write_text(
-        "---\nname: project\ndescription: placeholder for init merge test.\n---\n\n# old\n",
+        "---\nname: project\ndescription: placeholder for init skip test.\n---\n\n# old\n",
         encoding="utf-8",
     )
-    leftover = dest / "references"
-    leftover.mkdir()
-    (leftover / "README.md").write_text("# stale index\n", encoding="utf-8")
     assert main(["init", str(tmp_path)]) == 0
-    assert (dest / "SKILL.md").read_text(encoding="utf-8").startswith("---\nname: project")
     assert "# old" in (dest / "SKILL.md").read_text(encoding="utf-8")
-    assert (dest / "references" / "layout.md").is_file()
-    assert not (dest / "references" / "README.md").exists()
+    assert not (dest / "references").exists()
     claude = tmp_path / ".claude" / "skills" / "project"
     assert (claude / "SKILL.md").is_file()
     assert (claude / "references" / "layout.md").is_file()
-    assert not (claude / "references" / "README.md").exists()
+
+
+def test_init_force_replaces_existing(tmp_path: Path) -> None:
+    dest = tmp_path / ".agents" / "skills" / "project"
+    dest.mkdir(parents=True)
+    (dest / "SKILL.md").write_text("# old\n", encoding="utf-8")
+    (dest / "stale.txt").write_text("x\n", encoding="utf-8")
+    assert main(["init", "--force", str(tmp_path)]) == 0
+    text = (dest / "SKILL.md").read_text(encoding="utf-8")
+    assert "name: project" in text
+    assert not (dest / "stale.txt").exists()
+    assert (tmp_path / ".claude" / "skills" / "project" / "SKILL.md").is_file()

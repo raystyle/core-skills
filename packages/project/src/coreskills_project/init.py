@@ -21,46 +21,15 @@ def init_project(root: Path, *, force: bool = False) -> list[str]:
     actions: list[str] = []
     for base in skill_install_dirs(root):
         dest = base / SKILL_NAME
-        actions.extend(_copy_tree(src, dest, root, force=force))
-        actions.extend(_strip_references_readme(dest, root))
-    return actions
-
-
-def _copy_tree(src: Path, dest: Path, root: Path, *, force: bool) -> list[str]:
-    dest.mkdir(parents=True, exist_ok=True)
-    actions: list[str] = []
-    for item in sorted(src.iterdir()):
-        if item.name.startswith("."):
-            continue
-        if _is_references_readme(item, dest):
-            continue
-        out = dest / item.name
-        if item.is_dir():
-            actions.extend(_copy_tree(item, out, root, force=force))
-            continue
-        rel = _rel(root, out)
-        if out.exists() and not force:
+        rel = _rel(root, dest)
+        if dest.exists() and not force:
             actions.append(f"skip {rel}（已存在，--force 覆盖）")
             continue
-        shutil.copy2(item, out)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
         actions.append(f"wrote {rel}")
     return actions
-
-
-def _is_references_readme(item: Path, dest: Path) -> bool:
-    return (
-        item.is_file()
-        and item.name.lower() == "readme.md"
-        and dest.name == "references"
-    )
-
-
-def _strip_references_readme(dest: Path, root: Path) -> list[str]:
-    readme = dest / "references" / "README.md"
-    if not readme.is_file():
-        return []
-    readme.unlink()
-    return [f"removed {_rel(root, readme)}（索引在 SKILL.md）"]
 
 
 def _rel(root: Path, path: Path) -> str:
