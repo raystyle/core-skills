@@ -15,7 +15,12 @@ class RunResult:
     stderr: str
 
 
-def run(argv: Sequence[str], *, timeout: float = 30) -> RunResult:
+def run(
+    argv: Sequence[str],
+    *,
+    timeout: float = 30,
+    env: dict[str, str] | None = None,
+) -> RunResult:
     proc = subprocess.run(
         list(argv),
         capture_output=True,
@@ -23,6 +28,7 @@ def run(argv: Sequence[str], *, timeout: float = 30) -> RunResult:
         encoding="utf-8",
         errors="replace",
         timeout=timeout,
+        env=env,
     )
     return RunResult(list(argv), proc.returncode, proc.stdout, proc.stderr)
 

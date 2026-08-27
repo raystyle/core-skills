@@ -9,7 +9,7 @@
 | 命令 | 别名 | 作用 |
 |------|------|------|
 | `new-tab` | `nt` | 新标签 |
-| `split-pane` | `sp` | 拆窗格：`-H`=Down，`-V`=Right，`-s/--size` 0.01–0.99 |
+| `split-pane` | `sp` | 拆窗格：`-H`=Down，`-V`=Right，`-s/--size` 0.01–0.99；`-d/--startingDirectory`；`--inheritEnvironment` |
 | `focus-tab` | `ft` | `-t` 标签序号 |
 | `move-focus` | `mf` | 必填方向：`left/right/up/down/previous/nextInOrder/previousInOrder/first` |
 | `move-pane` | `mp` | 焦点窗格移到另一标签 |
@@ -17,9 +17,11 @@
 | `focus-pane` | `fp` | **必填** `-t/--target` 非负整数（按创建顺序的窗格 id） |
 | `x-save` | | 内部保存命令行 |
 
-**没有 `close-pane`。** 调用未注册子命令会 `CLI::ParseError` → Help 对话框。
+**没有 `close-pane`，也没有 `resize-pane`、`send-keys`。** 调用未注册子命令会 `CLI::ParseError` → Help 对话框。调大小只能走默认键位 Alt+Shift+方向。往窗格打字/方向键：先 `focus-pane -t n`，再 SendInput（`workspace pane keys`）。
 
-`-w 0` / `--window 0`：当前窗口。
+有 commandline 时源码把 `inheritEnv` 设为 true（PATH / 进程环境跟过去）；空 split 用配置文件则 reload。`--inheritEnvironment` / `--reloadEnvironment` 可显式覆盖。
+
+`-w 0` / `--window 0`：**最近使用的窗口**，不是「本进程所在窗口」。另一扇 WT 在前台时 split/focus 会打到那边。本 CLI 在 split 前把本窗口拉到前台。
 
 ## `;` 分隔符
 

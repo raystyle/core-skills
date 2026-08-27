@@ -9,6 +9,11 @@
 - `split --cmd` 含 `;` 时改 `pwsh -EncodedCommand`，避免 wt 把分号切成下一条命令（`0x80070002`）
 - wt `pane list` 按 Cascadia HWND + UIA TermControl 区分窗口
 - 同一窗口三原语：`pane count` / `pane read` / `pane close`；`pane_id` 用 `WT_SESSION`（对齐 Herdr 的 `HERDR_PANE_ID`）
+- 同一窗口建格 / 布局：`pane split`（`split` 别名）默认 `--startingDirectory`/`--cwd` 为当前目录；`--agent claude|codex|kimi|…` 经 pwsh EncodedCommand 启动；`pane swap`；`pane resize`（wt 无 CLI，发 Alt+Shift+方向）
+- 同一窗口交互：`pane text` / `pane keys`（wt 无 send-keys CLI，对目标 TermControl SetFocus 再 SendInput）。菜单选择用 `up/down/left/right`
+- `pane close` 不再走 `wt -w 0 focus-pane`（会关错当前格）；改为目标 TermControl SetFocus，确认焦点后再 Ctrl+Shift+W / Ctrl+D
+- 新格启动清掉继承来的 `NO_COLOR=1` / `TERM=dumb` / `FORCE_COLOR=0`，设 `xterm-256color` 与 `FORCE_COLOR=1`（win-rmux 同款；否则 claude 单色）。split 前把本窗口拉到前台，避免 `wt -w 0` 拆到另一扇
+- 按 claude 评审修 Windows 侧：`swap`/`focus` 同样钉本窗口；`close others` 多窗口必须标题含目录名否则拒绝；send/resize SetFocus 后复核焦点；`_tag_records` 不再把外来壳的 pane_id 贴到本窗口；stdin `pane text` 去掉尾随换行。herdr 关自己 / Linux import 冒烟留到 Linux 上测
 - `workspace init`：自带 skill 整树拷到 `.agents/skills/workspace/` 与 `.claude/skills/workspace/` 各一份
 - `project init`：把自带 `project` skill 整树拷到 `.agents/skills/project/` 与 `.claude/skills/project/` 各一份；已存在则跳过，`--force` 整目录覆盖
 - 自带 skill 补 `references/`（layout / claude-md / sdlc-change / review / skills / hooks / six-states）；索引在 `SKILL.md`，`references/` 不放 README.md

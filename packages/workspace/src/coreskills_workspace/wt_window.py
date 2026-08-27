@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 from collections.abc import Callable, Sequence
+import sys
 from ctypes import (
     POINTER,
     Structure,
@@ -15,9 +16,14 @@ from ctypes import (
     c_ulong,
     c_void_p,
     sizeof,
-    windll,
 )
-from ctypes import wintypes as w
+
+if sys.platform == "win32":
+    from ctypes import windll
+    from ctypes import wintypes as w
+else:  # herdr/Linux：顶层 import windll 会 ImportError
+    windll = None  # type: ignore[assignment]
+    w = None  # type: ignore[assignment]
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,18 +37,56 @@ SHELL_NAMES = {
 SKIP_RUNNING = {"conhost.exe", "openconsole.exe"}
 PROCESS_QUERY_INFORMATION = 0x0400
 PROCESS_VM_READ = 0x0010
-OpenProcess = windll.kernel32.OpenProcess
-OpenProcess.restype = w.HANDLE
-ReadProcessMemory = windll.kernel32.ReadProcessMemory
-ReadProcessMemory.argtypes = [
-    w.HANDLE,
-    w.LPCVOID,
-    w.LPVOID,
-    c_size_t,
-    POINTER(c_size_t),
-]
-NtQueryInformationProcess = windll.ntdll.NtQueryInformationProcess
-CloseHandle = windll.kernel32.CloseHandle
+if windll is not None:
+    OpenProcess = windll.kernel32.OpenProcess
+    OpenProcess.restype = w.HANDLE
+    ReadProcessMemory = windll.kernel32.ReadProcessMemory
+    ReadProcessMemory.argtypes = [
+        w.HANDLE,
+        w.LPCVOID,
+        w.LPVOID,
+        c_size_t,
+        POINTER(c_size_t),
+    ]
+    NtQueryInformationProcess = windll.ntdll.NtQueryInformationProcess
+    CloseHandle = windll.kernel32.CloseHandle
+    _user32 = windll.user32
+    _kernel32 = windll.kernel32
+else:
+    OpenProcess = None
+    ReadProcessMemory = None
+    NtQueryInformationProcess = None
+    CloseHandle = None
+    _user32 = None
+    _kernel32 = None
+
+
+def force_foreground(hwnd: int) -> bool:
+    """Make this Cascadia HWND the last-used WT window so `wt -w 0` hits it.
+
+    Do not ShowWindow(SW_RESTORE=9) on a visible/maximized window — that
+    un-maximizes it (the split-pane 'shrink then open' hitch).
+    Returns True if we actually switched the foreground.
+    """
+    if not hwnd or _user32 is None:
+        return False
+    target = int(hwnd)
+    fg = int(_user32.GetForegroundWindow() or 0)
+    if fg == target:
+        return False
+    pid = w.DWORD()
+    fore = _user32.GetWindowThreadProcessId(fg, byref(pid))
+    self = _kernel32.GetCurrentThreadId()
+    attached = False
+    if fore and self and fore != self:
+        attached = bool(_user32.AttachThreadInput(fore, self, True))
+    if _user32.IsIconic(target):
+        _user32.ShowWindow(target, 9)
+    _user32.BringWindowToTop(target)
+    _user32.SetForegroundWindow(target)
+    if attached:
+        _user32.AttachThreadInput(fore, self, False)
+    return True
 
 
 class _PBI(Structure):
@@ -69,6 +113,8 @@ def process_env(pid: int, keys: Sequence[str] | None = None) -> dict[str, str]:
             "HERDR_ENV",
         )
     )
+    if OpenProcess is None:
+        return {}
     handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
     if not handle:
         return {}
@@ -229,9 +275,16 @@ def window_panes(
 
 
 def pick_current_window(
-    host_windows: Sequence[dict], *, cwd: str | None = None
+    host_windows: Sequence[dict],
+    *,
+    cwd: str | None = None,
+    allow_fallback: bool = True,
 ) -> dict | None:
-    """Window this agent is in: title∋cwd name, else unique split window, else foreground."""
+    """Window this agent is in: unique title∋cwd name, else sole window.
+
+    allow_fallback=False (close others): never pick 'the only multi-pane' or
+    foreground — those can be a different grok window.
+    """
     wins = list(host_windows)
     if cwd:
         name = Path(cwd).name.lower()
@@ -239,6 +292,12 @@ def pick_current_window(
             hits = [w for w in wins if name in (w.get("title") or "").lower()]
             if len(hits) == 1:
                 return hits[0]
+            if len(hits) > 1:
+                return None
+    if len(wins) == 1:
+        return wins[0]
+    if not allow_fallback:
+        return None
     multi = [w for w in wins if int(w.get("panes") or 0) > 1]
     if len(multi) == 1:
         return multi[0]
@@ -256,9 +315,13 @@ def siblings_in_current_window(
     Pane count comes from UIA. Sibling shells are the nearest-in-creation-time
     neighbors of the current shell (same WT process, not the current pane).
     """
-    current_win = pick_current_window(host_windows, cwd=str(Path.cwd()))
+    current_win = pick_current_window(
+        host_windows, cwd=str(Path.cwd()), allow_fallback=False
+    )
     if not current_win:
-        raise RuntimeError("无法确定当前 Cascadia 窗口")
+        raise RuntimeError(
+            "无法确定当前窗口（多扇窗口时标题需含当前目录名），拒绝 close others"
+        )
     n_other = int(current_win.get("panes") or 0) - 1
     if n_other <= 0:
         raise RuntimeError("当前窗口没有其它窗格")

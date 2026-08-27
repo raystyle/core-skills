@@ -5,19 +5,25 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shlex
 import shutil
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .detect import DetectResult, detect
 from .run import RunResult, Runner, run as default_run
-from .wt_terms import close_term, inspect_panes, read_pane as uia_read_pane
+from .wt_terms import (
+    close_term,
+    inspect_panes,
+    read_pane as uia_read_pane,
+    resize_term,
+    send_term,
+)
 from .wt_window import (
     Killer,
     Proc,
-    _created_dist,
+    force_foreground,
     kill_pid,
     list_host_windows,
     pick_current_window,
@@ -32,6 +38,51 @@ SPLIT_DOWN = {"down", "h", "horizontal"}
 FOCUS_DIRS = {"left", "right", "up", "down"}
 # microsoft/terminal AppCommandlineArgs.cpp focusDirectionMap
 WT_MOVE_FOCUS = FOCUS_DIRS | {"previous", "first", "nextInOrder", "previousInOrder"}
+# PATH 名；claude-code 只是别名。未知名字也走 shutil.which（其它智能体）。
+AGENT_ALIASES = {
+    "claude": "claude",
+    "claude-code": "claude",
+    "codex": "codex",
+    "kimi": "kimi",
+    "grok": "grok",
+    "pi": "pi",
+    "opencode": "opencode",
+    "gemini": "gemini",
+    "cursor": "cursor",
+}
+KEY_ALIASES = {
+    "return": "enter",
+    "escape": "esc",
+    "bs": "backspace",
+    "del": "delete",
+    "pgup": "pageup",
+    "pgdn": "pagedown",
+    "spacebar": "space",
+    "上": "up",
+    "下": "down",
+    "左": "left",
+    "右": "right",
+}
+VK = {
+    "enter": 0x0D,
+    "tab": 0x09,
+    "esc": 0x1B,
+    "space": 0x20,
+    "backspace": 0x08,
+    "delete": 0x2E,
+    "up": 0x26,
+    "down": 0x28,
+    "left": 0x25,
+    "right": 0x27,
+    "home": 0x24,
+    "end": 0x23,
+    "pageup": 0x21,
+    "pagedown": 0x22,
+    "minus": 0xBD,
+    "plus": 0xBB,
+}
+VK.update({f"f{i}": 0x6F + i for i in range(1, 13)})
+MOD_VK = {"ctrl": 0x11, "alt": 0x12, "shift": 0x10}
 # Same file: _buildParser subcommands. There is no close-pane.
 WT_SUBCOMMANDS = (
     "new-tab",
@@ -79,9 +130,17 @@ def _bin(info: DetectResult) -> str:
     return info.bin or shutil.which("herdr") or "herdr"
 
 
-def _exec(runner: Runner | None, argv: Sequence[str]) -> RunResult:
-    fn = runner or default_run
-    return fn(argv)
+def _exec(
+    runner: Runner | None,
+    argv: Sequence[str],
+    *,
+    env: dict[str, str] | None = None,
+) -> RunResult:
+    if runner is not None:
+        return runner(argv)
+    if env is not None:
+        return default_run(argv, env=env)
+    return default_run(argv)
 
 
 def _check(result: RunResult, *, what: str) -> RunResult:
@@ -91,22 +150,203 @@ def _check(result: RunResult, *, what: str) -> RunResult:
     return result
 
 
+def _ps_quote(s: str) -> str:
+    return "'" + s.replace("'", "''") + "'"
+
+
+def normalize_key(token: str) -> str:
+    raw = token.strip()
+    if not raw:
+        raise MuxError("空按键")
+    low = raw.lower().replace("c-", "ctrl+").replace("control+", "ctrl+")
+    if "+" in low:
+        parts = [p for p in low.split("+") if p]
+        mods: list[str] = []
+        key = None
+        order = ("ctrl", "alt", "shift")
+        for part in parts:
+            part = KEY_ALIASES.get(part, part)
+            if part in MOD_VK:
+                if part not in mods:
+                    mods.append(part)
+            else:
+                key = KEY_ALIASES.get(part, part)
+        if key is None:
+            raise MuxError(f"无法解析按键 {token!r}")
+        mods.sort(key=lambda m: order.index(m) if m in order else 9)
+        return "+".join([*mods, key])
+    return KEY_ALIASES.get(low, low)
+
+
+def key_chords(names: Sequence[str]) -> tuple[list[str], list[list[int]]]:
+    canon = [normalize_key(n) for n in names]
+    chords: list[list[int]] = []
+    for item in canon:
+        parts = item.split("+")
+        vks: list[int] = []
+        for mod in parts[:-1]:
+            if mod not in MOD_VK:
+                raise MuxError(f"未知修饰键 {mod!r}")
+            vks.append(MOD_VK[mod])
+        last = parts[-1]
+        if last in VK:
+            vks.append(VK[last])
+        elif len(last) == 1 and last.isascii():
+            if last.isalpha():
+                vks.append(ord(last.upper()))
+            elif last.isdigit():
+                vks.append(ord(last))
+            else:
+                raise MuxError(f"未知按键 {item!r}；可打印字符请用 pane text")
+        else:
+            raise MuxError(f"未知按键 {item!r}")
+        chords.append(vks)
+    return canon, chords
+
+
+def resolve_agent(
+    name: str, *, which: Callable[[str], str | None] | None = None
+) -> tuple[str, str]:
+    raw = name.lower().strip()
+    if not raw:
+        raise MuxError("空的 --agent")
+    kind = AGENT_ALIASES.get(raw, raw)
+    find = which or shutil.which
+    exe = find(kind)
+    if not exe:
+        raise MuxError(f"找不到智能体 {kind!r}（不在 PATH）")
+    return kind, exe
+
+
 def split_pane(
     direction: str,
     *,
     cwd: Path | None = None,
     title: str | None = None,
     cmd: str | None = None,
+    agent: str | None = None,
     size: float | None = None,
     info: DetectResult | None = None,
     runner: Runner | None = None,
+    which: Callable[[str], str | None] | None = None,
 ) -> dict:
     info = require_mux(info)
     side = normalize_split(direction)
     cwd_s = str(cwd.resolve()) if cwd is not None else str(Path.cwd())
+    extra_env: dict[str, str] = {}
+    kind: str | None = None
+    if size is not None and not (0.01 <= float(size) <= 0.99):
+        raise MuxError("--size 范围 0.01–0.99")
+    if agent and cmd:
+        raise MuxError("--agent 和 --cmd 不能一起用")
+    if agent:
+        kind, exe = resolve_agent(agent, which=which)
+        extra_env["WORKSPACE_AGENT"] = kind
+        title = title or kind
+        cmd = f"& {_ps_quote(exe)}" if info.mux == "wt" else kind
     if info.mux == "wt":
-        return _split_wt(side, cwd=cwd_s, title=title, cmd=cmd, size=size, info=info, runner=runner)
-    return _split_herdr(side, cwd=cwd_s, title=title, cmd=cmd, size=size, info=info, runner=runner)
+        return _split_wt(
+            side,
+            cwd=cwd_s,
+            title=title,
+            cmd=cmd,
+            size=size,
+            extra_env=extra_env,
+            agent=kind,
+            info=info,
+            runner=runner,
+        )
+    return _split_herdr(
+        side,
+        cwd=cwd_s,
+        title=title,
+        cmd=cmd,
+        size=size,
+        extra_env=extra_env,
+        agent=kind,
+        info=info,
+        runner=runner,
+    )
+
+
+def swap_pane(
+    direction: str, *, info: DetectResult | None = None, runner: Runner | None = None
+) -> dict:
+    info = require_mux(info)
+    d = direction.lower().strip()
+    if info.mux == "wt":
+        if d not in WT_MOVE_FOCUS:
+            raise MuxError(
+                "wt pane swap 接受 left/right/up/down/previous/first/nextInOrder/previousInOrder"
+            )
+        if runner is None:
+            _focus_our_window()
+        _check(
+            _exec(runner, [_bin(info), "-w", "0", "swap-pane", d]),
+            what="wt swap-pane",
+        )
+        return {"mux": "wt", "swapped": d, "via": "swap-pane"}
+    if d not in FOCUS_DIRS:
+        raise MuxError("herdr pane swap 只接受方向：left/right/up/down")
+    _check(
+        _exec(
+            runner,
+            [_bin(info), "pane", "swap", "--direction", d, "--current"],
+        ),
+        what="herdr pane swap",
+    )
+    return {"mux": "herdr", "swapped": d}
+
+
+def resize_pane(
+    direction: str,
+    *,
+    amount: float | None = None,
+    info: DetectResult | None = None,
+    runner: Runner | None = None,
+    send_keys: Callable[[str, int], dict] | None = None,
+) -> dict:
+    info = require_mux(info)
+    d = direction.lower().strip()
+    if d not in FOCUS_DIRS:
+        raise MuxError("resize 只用 left/right/up/down")
+    if info.mux == "wt":
+        # AppCommandlineArgs.cpp 没有 resize-pane。默认键位 Alt+Shift+方向。
+        steps = 5 if amount is None else max(1, int(amount))
+        if send_keys is not None:
+            data = send_keys(d, steps)
+        else:
+            listed = count_panes(info=info)
+            self_id = next(
+                (int(p["id"]) for p in (listed.get("panes") or []) if p.get("current")),
+                None,
+            )
+            if self_id is None:
+                raise MuxError("无法确定当前格，拒绝 resize")
+            data = resize_term(d, steps, pane_id=self_id)
+        data["mux"] = "wt"
+        data["resized"] = d
+        data["steps"] = steps
+        data["via"] = "alt+shift+arrow"
+        return data
+    amt = 0.1 if amount is None else amount
+    _check(
+        _exec(
+            runner,
+            [
+                _bin(info),
+                "pane",
+                "resize",
+                "--direction",
+                d,
+                "--amount",
+                str(amt),
+                "--current",
+            ],
+        ),
+        what="herdr pane resize",
+    )
+    return {"mux": "herdr", "resized": d, "amount": amt}
 
 
 def resolve_pane(target: str, records: list[dict]) -> int:
@@ -122,6 +362,7 @@ def resolve_pane(target: str, records: list[dict]) -> int:
         for r in records
         if str(r.get("pane_id") or "").lower().startswith(key)
         or str(r.get("wt_session") or "").lower().startswith(key)
+        or str(r.get("id") or "").lower().startswith(key)
     ]
     if len(hits) == 1:
         return int(hits[0]["id"])
@@ -129,26 +370,35 @@ def resolve_pane(target: str, records: list[dict]) -> int:
 
 
 def _tag_records(uia: dict, tree: list[dict]) -> list[dict]:
+    """Tag UIA terms. Only the caller pane gets pane_id; do not zip foreign shells."""
     terms = uia.get("panes") or []
     mine = next((p for p in tree if p.get("current")), None)
-    local: list[dict] = []
-    if mine:
-        others = [p for p in tree if not p.get("current") and p.get("shell_pid")]
-        others.sort(
-            key=lambda p: _created_dist(mine.get("created") or "", p.get("created") or "")
-        )
-        local = [mine, *others[: max(0, len(terms) - 1)]]
-        local.sort(key=lambda p: p.get("created") or "")
+    hint = "workspace pane"
+    hits = [
+        i
+        for i, term in enumerate(terms)
+        if hint in str(term.get("preview") or "") or hint in str(term.get("text") or "")
+    ]
+    self_idx: int | None
+    if len(hits) == 1:
+        self_idx = hits[0]
+    elif mine is not None and len(terms) == 1:
+        self_idx = 0
+    else:
+        self_idx = None
     records = []
     for i, term in enumerate(terms):
-        shell = local[i] if i < len(local) else {}
+        is_self = self_idx is not None and i == self_idx
+        shell = mine if is_self and mine else {}
         records.append(
             {
                 "id": i,
-                "pane_id": shell.get("pane_id") or shell.get("wt_session"),
-                "wt_session": shell.get("wt_session"),
-                "current": bool(shell.get("current")),
-                "running": shell.get("running") or [],
+                "pane_id": (shell.get("pane_id") or shell.get("wt_session"))
+                if is_self
+                else None,
+                "wt_session": shell.get("wt_session") if is_self else None,
+                "current": is_self,
+                "running": (shell.get("running") or []) if is_self else [],
                 "exited": term.get("exited"),
                 "focus": term.get("focus"),
                 "preview": term.get("preview"),
@@ -188,6 +438,7 @@ def count_panes(*, info: DetectResult | None = None, snapshot: dict | None = Non
         "hwnd": data.get("hwnd"),
         "title": data.get("title"),
         "current": os.environ.get("WT_SESSION"),
+        "current_session": os.environ.get("WT_SESSION"),
         "panes": records,
     }
 
@@ -224,6 +475,108 @@ def read_pane_content(
     return data
 
 
+def send_text_to_pane(
+    target: str,
+    text: str,
+    *,
+    info: DetectResult | None = None,
+    runner: Runner | None = None,
+    snapshot: dict | None = None,
+    sender: Callable[..., dict] | None = None,
+) -> dict:
+    if text == "":
+        raise MuxError("空文本")
+    return _interact_pane(
+        target,
+        text=text,
+        keys=[],
+        info=info,
+        runner=runner,
+        snapshot=snapshot,
+        sender=sender,
+    )
+
+
+def send_keys_to_pane(
+    target: str,
+    keys: Sequence[str],
+    *,
+    info: DetectResult | None = None,
+    runner: Runner | None = None,
+    snapshot: dict | None = None,
+    sender: Callable[..., dict] | None = None,
+) -> dict:
+    if not keys:
+        raise MuxError("给出至少一个按键，如 enter / ctrl+c / down")
+    return _interact_pane(
+        target,
+        text=None,
+        keys=list(keys),
+        info=info,
+        runner=runner,
+        snapshot=snapshot,
+        sender=sender,
+    )
+
+
+def _interact_pane(
+    target: str,
+    *,
+    text: str | None,
+    keys: list[str],
+    info: DetectResult | None,
+    runner: Runner | None,
+    snapshot: dict | None,
+    sender: Callable[..., dict] | None,
+) -> dict:
+    info = require_mux(info)
+    canon, chords = key_chords(keys) if keys else ([], [])
+    if info.mux != "wt":
+        t = str(target).strip()
+        if t.lower() in {"", "current"}:
+            t = info.pane or ""
+            if not t:
+                raise MuxError("herdr 发键需要窗格 id（HERDR_PANE_ID 为空）")
+        if info.pane and t == info.pane:
+            raise MuxError("不能向当前窗格发键（会打进正在跑的命令）")
+        if text is not None:
+            _check(
+                _exec(runner, [_bin(info), "pane", "send-text", t, text]),
+                what="herdr pane send-text",
+            )
+        if canon:
+            _check(
+                _exec(runner, [_bin(info), "pane", "send-keys", t, *canon]),
+                what="herdr pane send-keys",
+            )
+        return {
+            "mux": "herdr",
+            "target": t,
+            "text": text,
+            "keys": canon,
+        }
+    listed = count_panes(info=info, snapshot=snapshot)
+    panes = listed.get("panes") or []
+    idx = resolve_pane(str(target), panes)
+    rec = panes[idx]
+    if rec.get("current"):
+        raise MuxError("不能向当前窗格发键（会打进正在跑的命令）")
+    restore = next((int(p["id"]) for p in panes if p.get("current")), None)
+    if sender is not None:
+        data = sender(idx, text, chords, restore)
+    else:
+        try:
+            data = send_term(idx, text=text, chords=chords, restore=restore)
+        except RuntimeError as exc:
+            raise MuxError(str(exc)) from exc
+    data["mux"] = "wt"
+    data["id"] = idx
+    data["pane_id"] = rec.get("pane_id")
+    data["text"] = text
+    data["keys"] = canon
+    return data
+
+
 def list_panes(
     *,
     info: DetectResult | None = None,
@@ -248,6 +601,8 @@ def focus_pane(
     info = require_mux(info)
     t = target.strip()
     if info.mux == "wt":
+        if runner is None:
+            _focus_our_window()
         if t.isdigit():
             _check(
                 _exec(runner, [_bin(info), "-w", "0", "focus-pane", "-t", t]),
@@ -257,7 +612,8 @@ def focus_pane(
         d = t.lower()
         if d not in WT_MOVE_FOCUS:
             raise MuxError(
-                "wt pane focus 接受方向（left/right/up/down/previous/first）或创建序号整数"
+                "wt pane focus 接受方向（left/right/up/down/previous/first/"
+                "nextInOrder/previousInOrder）或创建序号整数"
             )
         _check(
             _exec(runner, [_bin(info), "-w", "0", "move-focus", d]),
@@ -287,27 +643,31 @@ def close_pane(
     info = require_mux(info)
     t = target.strip() or "current"
     if info.mux == "wt":
-        if t.isdigit() or "-" in t:
-            listed = count_panes(info=info)
-            idx = resolve_pane(t, listed.get("panes") or [])
-            rec = (listed.get("panes") or [])[idx]
-            if rec.get("current"):
-                raise MuxError("不能关当前窗格")
-            try:
-                data = close_term(idx)
-            except RuntimeError as exc:
-                raise MuxError(str(exc)) from exc
-            data["mux"] = "wt"
-            data["pane_id"] = rec.get("pane_id")
-            return data
-        return _close_wt(
-            t,
-            info=info,
-            procs=procs,
-            self_pid=self_pid,
-            killer=killer,
-            host_windows=host_windows,
-        )
+        if t.lower() == "current":
+            raise MuxError("不能关当前窗格")
+        if t.lower() in {"others", "other"}:
+            return _close_wt(
+                t,
+                info=info,
+                procs=procs,
+                self_pid=self_pid,
+                killer=killer,
+                host_windows=host_windows,
+            )
+        listed = count_panes(info=info)
+        panes = listed.get("panes") or []
+        idx = resolve_pane(t, panes)
+        rec = panes[idx]
+        self_id = next((int(p["id"]) for p in panes if p.get("current")), None)
+        if rec.get("current") or (self_id is not None and idx == self_id):
+            raise MuxError("不能关当前窗格")
+        try:
+            data = close_term(idx, self_id=self_id)
+        except RuntimeError as exc:
+            raise MuxError(str(exc)) from exc
+        data["mux"] = "wt"
+        data["pane_id"] = rec.get("pane_id")
+        return data
     if t.lower() == "current":
         t = info.pane or ""
         if not t:
@@ -392,6 +752,8 @@ def _split_wt(
     title: str | None,
     cmd: str | None,
     size: float | None,
+    extra_env: dict[str, str],
+    agent: str | None,
     info: DetectResult,
     runner: Runner | None,
 ) -> dict:
@@ -401,21 +763,72 @@ def _split_wt(
         argv.extend(["--title", title, "--suppressApplicationTitle"])
     if size is not None:
         argv.extend(["--size", str(size)])
+    pane_id = None
     if cmd:
-        argv.extend(_wt_spawn_argv(cmd))
-    _check(_exec(runner, argv), what="wt split-pane")
-    return {"mux": "wt", "direction": side, "cwd": cwd, "title": title, "cmd": cmd}
-
-
-def _wt_spawn_argv(cmd: str) -> list[str]:
-    """Argv for the new pane. Inject WORKSPACE_* like Herdr injects HERDR_PANE_ID."""
-    pane_id = "p-" + uuid.uuid4().hex[:8]
-    wrapper = (
-        f"$env:WORKSPACE_ENV='1'; $env:WORKSPACE_PANE_ID='{pane_id}'; {cmd}"
+        # commandline 存在时源码默认 inherit；显式写出，让 PATH / API key 跟过来。
+        argv.append("--inheritEnvironment")
+        spawn, pane_id = _wt_spawn_argv(cmd, extra_env=extra_env)
+        argv.extend(spawn)
+    if runner is None:
+        _focus_our_window()
+    _check(
+        _exec(runner, argv, env=None if runner else _wt_client_env()),
+        what="wt split-pane",
     )
+    return {
+        "mux": "wt",
+        "direction": side,
+        "cwd": cwd,
+        "title": title,
+        "cmd": cmd,
+        "agent": agent,
+        "pane": pane_id,
+        "via": "pwsh EncodedCommand" if cmd else "profile",
+    }
+
+
+def _wt_client_env() -> dict[str, str]:
+    """Env for the `wt` client so inheritEnvironment is not NO_COLOR/FORCE_COLOR=0."""
+    env = {k: v for k, v in os.environ.items() if k.upper() not in {"NO_COLOR", "FORCE_COLOR"}}
+    env["TERM"] = "xterm-256color"
+    env["COLORTERM"] = "truecolor"
+    env["FORCE_COLOR"] = "1"
+    return env
+
+
+def _focus_our_window() -> None:
+    """`wt -w 0` is last-used window, not 'this pane's window'."""
+    rows = snapshot_processes()
+    tid = terminal_pid(rows, os.getpid())
+    if not tid:
+        return
+    chosen = pick_current_window(list_host_windows(tid), cwd=str(Path.cwd()))
+    hwnd = (chosen or {}).get("hwnd")
+    if hwnd and force_foreground(int(hwnd)):
+        time.sleep(0.15)
+
+
+def _wt_spawn_argv(
+    cmd: str, *, extra_env: dict[str, str] | None = None
+) -> tuple[list[str], str]:
+    """pwsh EncodedCommand：注入 WORKSPACE_*，避免 wt 把 `;` 切成下一条命令。"""
+    pane_id = "p-" + uuid.uuid4().hex[:8]
+    # inheritEnvironment 会把宿主的 NO_COLOR=1 / TERM=dumb 带进新格（Codex/Grok
+    # 沙箱注入）。win-rmux 实测：必须 Remove-Item，置空无效。见 docs/research/pane-color.md
+    assigns = [
+        "Remove-Item Env:NO_COLOR,Env:FORCE_COLOR -ErrorAction SilentlyContinue",
+        "$env:TERM='xterm-256color'",
+        "$env:COLORTERM='truecolor'",
+        "$env:FORCE_COLOR='1'",
+        "$env:WORKSPACE_ENV='1'",
+        f"$env:WORKSPACE_PANE_ID={_ps_quote(pane_id)}",
+    ]
+    for key, value in (extra_env or {}).items():
+        assigns.append(f"$env:{key}={_ps_quote(value)}")
+    wrapper = "; ".join(assigns) + "; " + cmd
     shell = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
     blob = base64.b64encode(wrapper.encode("utf-16-le")).decode("ascii")
-    return [shell, "-NoProfile", "-EncodedCommand", blob]
+    return [shell, "-NoProfile", "-EncodedCommand", blob], pane_id
 
 
 def _split_herdr(
@@ -425,9 +838,12 @@ def _split_herdr(
     title: str | None,
     cmd: str | None,
     size: float | None,
+    extra_env: dict[str, str],
+    agent: str | None,
     info: DetectResult,
     runner: Runner | None,
 ) -> dict:
+    workspace_pane = "p-" + uuid.uuid4().hex[:8]
     argv = [
         _bin(info),
         "pane",
@@ -438,7 +854,13 @@ def _split_herdr(
         "--cwd",
         cwd,
         "--no-focus",
+        "--env",
+        "WORKSPACE_ENV=1",
+        "--env",
+        f"WORKSPACE_PANE_ID={workspace_pane}",
     ]
+    for key, value in extra_env.items():
+        argv.extend(["--env", f"{key}={value}"])
     if size is not None:
         argv.extend(["--ratio", str(size)])
     result = _check(_exec(runner, argv), what="herdr pane split")
@@ -456,12 +878,9 @@ def _split_herdr(
         "cwd": cwd,
         "title": title,
         "cmd": cmd,
+        "agent": agent,
         "pane": pane_id,
     }
-
-
-def _cmd_tokens(cmd: str, *, posix: bool) -> list[str]:
-    return shlex.split(cmd, posix=posix)
 
 
 def _parse_herdr_new_pane(stdout: str) -> str | None:

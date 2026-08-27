@@ -17,7 +17,11 @@ from .panes import (
     focus_pane,
     list_panes,
     read_pane_content,
+    resize_pane,
+    send_keys_to_pane,
+    send_text_to_pane,
     split_pane,
+    swap_pane,
 )
 from .pipe import send as pipe_send, listen as pipe_listen
 
@@ -33,7 +37,7 @@ def _force_utf8() -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="workspace",
-        description="检测 wt/herdr，统一窗格分割，文件信箱传文本。",
+        description="检测 wt/herdr，同一窗口拆/换/调格，文件信箱传文本。",
     )
     parser.add_argument("--version", action="version", version=f"workspace {__version__}")
     sub = parser.add_subparsers(dest="command")
@@ -48,21 +52,39 @@ def build_parser() -> argparse.ArgumentParser:
     det = sub.add_parser("detect", help="当前是否在 wt（Windows）或 herdr（Linux）里")
     det.add_argument("--json", action="store_true")
 
-    spl = sub.add_parser("split", help="分割当前窗格：right/down")
-    spl.add_argument("direction")
-    spl.add_argument("--cwd", type=Path, default=None)
-    spl.add_argument("--title", default=None)
-    spl.add_argument("--cmd", default=None, help="新窗格要跑的命令")
-    spl.add_argument("--size", type=float, default=None, help="新窗格占比，如 0.4")
-    spl.add_argument("--json", action="store_true")
+    spl = sub.add_parser("split", help="同一窗口拆一格：right/down")
+    _add_split_flags(spl)
 
-    pane = sub.add_parser("pane", help="同一窗口：count / read / close")
+    pane = sub.add_parser(
+        "pane",
+        help="同一窗口：split / swap / resize / count / read / text / keys / close",
+    )
     pane_sub = pane.add_subparsers(dest="pane_command", required=True)
+    psp = pane_sub.add_parser("split", help="同一窗口拆一格：right/down")
+    _add_split_flags(psp)
+    psw = pane_sub.add_parser("swap", help="与相邻格对调")
+    psw.add_argument("direction")
+    psw.add_argument("--json", action="store_true")
+    prs = pane_sub.add_parser("resize", help="调整当前格大小")
+    prs.add_argument("direction")
+    prs.add_argument("--amount", type=float, default=None, help="herdr 比例；wt 为 Alt+Shift 次数")
+    prs.add_argument("--json", action="store_true")
     pc = pane_sub.add_parser("count", help="当前窗口有几格")
     pc.add_argument("--json", action="store_true")
     pr = pane_sub.add_parser("read", help="读指定格的屏幕文本")
     pr.add_argument("id", help="序号或 pane_id / WT_SESSION 前缀")
     pr.add_argument("--json", action="store_true")
+    ptxt = pane_sub.add_parser("text", help="向指定格打字（不带 Enter）")
+    ptxt.add_argument("target")
+    ptxt.add_argument("text", nargs="?", default=None)
+    ptxt.add_argument("--json", action="store_true")
+    pk = pane_sub.add_parser(
+        "keys",
+        help="向指定格发按键：up/down/left/right、enter、ctrl+c …",
+    )
+    pk.add_argument("target")
+    pk.add_argument("keys", nargs="+", help="up down left right enter tab esc ctrl+c …")
+    pk.add_argument("--json", action="store_true")
     pcl = pane_sub.add_parser("close", help="关掉指定格（不能关最后一格/自己）")
     pcl.add_argument("target")
     pcl.add_argument("--json", action="store_true")
@@ -87,6 +109,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="秒；0 表示只清当前积压然后退出",
     )
     return parser
+
+
+def _add_split_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("direction")
+    parser.add_argument("--cwd", type=Path, default=None, help="默认当前 cwd")
+    parser.add_argument("--title", default=None)
+    parser.add_argument("--cmd", default=None, help="新窗格要跑的命令")
+    parser.add_argument(
+        "--agent",
+        default=None,
+        help="claude / codex / kimi / grok，或 PATH 上其它智能体（与 --cmd 互斥）",
+    )
+    parser.add_argument("--size", type=float, default=None, help="新窗格占比，如 0.4")
+    parser.add_argument("--json", action="store_true")
 
 
 def _print_json(data: object) -> None:
@@ -132,6 +168,7 @@ def cmd_split(args: argparse.Namespace) -> int:
             cwd=args.cwd,
             title=args.title,
             cmd=args.cmd,
+            agent=args.agent,
             size=args.size,
         )
     except MuxError as exc:
@@ -141,11 +178,14 @@ def cmd_split(args: argparse.Namespace) -> int:
         _print_json(data)
     else:
         extra = f" pane={data['pane']}" if data.get("pane") else ""
-        print(f"split {data['mux']} {data['direction']}{extra}")
+        agent = f" agent={data['agent']}" if data.get("agent") else ""
+        print(f"split {data['mux']} {data['direction']} cwd={data['cwd']}{agent}{extra}")
     return 0
 
 
 def cmd_pane(args: argparse.Namespace) -> int:
+    if args.pane_command == "split":
+        return cmd_split(args)
     try:
         if args.pane_command == "count":
             data = count_panes()
@@ -155,6 +195,24 @@ def cmd_pane(args: argparse.Namespace) -> int:
             data = list_panes()
         elif args.pane_command == "focus":
             data = focus_pane(args.target)
+        elif args.pane_command == "swap":
+            data = swap_pane(args.direction)
+        elif args.pane_command == "resize":
+            data = resize_pane(args.direction, amount=args.amount)
+        elif args.pane_command == "text":
+            text = args.text
+            if text is None:
+                if sys.stdin.isatty():
+                    print("error: 给出文本，或把内容通过 stdin 传入", file=sys.stderr)
+                    return 1
+                text = sys.stdin.read()
+            text = text.rstrip("\n")
+            if text == "":
+                print("error: 空文本", file=sys.stderr)
+                return 1
+            data = send_text_to_pane(args.target, text)
+        elif args.pane_command == "keys":
+            data = send_keys_to_pane(args.target, args.keys)
         else:
             data = close_pane(args.target)
     except MuxError as exc:
