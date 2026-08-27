@@ -11,6 +11,8 @@
 
 `--cmd` 在 wt 里作为新 pane 的 commandline；在 herdr 里 split 之后 `pane run`。`--size` 对应 wt `--size` / herdr `--ratio`。
 
+wt 把未转义的 `;` 当成下一条 wt 命令。`--cmd` 里带分号时走 `pwsh -EncodedCommand`，否则会去启动 `Start-Sleep` 这类词并报 `0x80070002`。
+
 ## list / focus / close
 
 依据 [microsoft/terminal AppCommandlineArgs.cpp](https://github.com/microsoft/terminal/blob/main/src/cascadia/TerminalApp/AppCommandlineArgs.cpp)。完整对照见 `docs/research/wt-cli.md`。

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -42,6 +43,26 @@ def test_split_wt_vertical() -> None:
     assert "--startingDirectory" in argv
     assert "logs" in argv
     assert "pwsh" in argv
+    assert "-EncodedCommand" not in argv
+
+
+def test_split_wt_semicolon_uses_encoded_command() -> None:
+    cmd = (
+        'pwsh -NoProfile -Command "Write-Output \'workspace-live pane\'; '
+        'Start-Sleep -Seconds 8"'
+    )
+    calls: list[list[str]] = []
+
+    def runner(argv):
+        calls.append(list(argv))
+        return RunResult(list(argv), 0, "", "")
+
+    split_pane("right", cwd=Path("D:/repo"), cmd=cmd, info=WT, runner=runner)
+    argv = calls[0]
+    assert ";" not in "".join(argv)
+    assert "-EncodedCommand" in argv
+    blob = argv[argv.index("-EncodedCommand") + 1]
+    assert base64.b64decode(blob).decode("utf-16-le") == cmd
 
 
 def test_split_herdr_down_parses_pane() -> None:

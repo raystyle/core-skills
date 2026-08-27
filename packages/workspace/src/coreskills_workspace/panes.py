@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import shlex
 import shutil
@@ -184,9 +185,18 @@ def _split_wt(
     if size is not None:
         argv.extend(["--size", str(size)])
     if cmd:
-        argv.extend(_cmd_tokens(cmd, posix=False))
+        argv.extend(_wt_spawn_argv(cmd))
     _check(_exec(runner, argv), what="wt split-pane")
     return {"mux": "wt", "direction": side, "cwd": cwd, "title": title, "cmd": cmd}
+
+
+def _wt_spawn_argv(cmd: str) -> list[str]:
+    """Argv for the new pane. WT splits on unescaped ';' (BuildCommands)."""
+    if ";" not in cmd:
+        return _cmd_tokens(cmd, posix=False)
+    shell = shutil.which("pwsh") or shutil.which("powershell") or "pwsh"
+    blob = base64.b64encode(cmd.encode("utf-16-le")).decode("ascii")
+    return [shell, "-NoProfile", "-EncodedCommand", blob]
 
 
 def _split_herdr(

@@ -20,3 +20,9 @@
 **没有 `close-pane`。** 调用未注册子命令会 `CLI::ParseError` → Help 对话框。
 
 `-w 0` / `--window 0`：当前窗口。
+
+## `;` 分隔符
+
+`BuildCommands` 用正则 `^;|[^\\];` 切开**每一条 argv**。未转义的 `;` 会变成下一条 `wt` 子命令（隐式 `new-tab`），于是去启动 `;` 后面的词当可执行文件 → `0x80070002 系统找不到指定的文件`（例如 `Start-Sleep`）。
+
+`workspace split --cmd` 若含 `;`，改为 `pwsh -EncodedCommand`，wt 命令行里不再出现分号。
